@@ -1746,6 +1746,7 @@ function startGame(noteData, songName, skipCountdown) {
   currentSongName = songName || 'Unknown';
 
   menuOverlay.classList.add('hidden');
+  songSelectOverlay.classList.remove('show');
   resultsOverlay.classList.remove('show');
   pauseOverlay.classList.remove('show');
 
