@@ -561,9 +561,6 @@ function midiToNotes(midi) {
 
   allNotes.sort((a, b) => a.time - b.time);
 
-  // Store for MIDI playback
-  midiPlaybackNotes = allNotes.map(n => ({ time: n.time, pitch: n.note, velocity: n.velocity, duration: n.duration }));
-
   // ---- Map notes to 4 lanes ----
   const uniquePitches = [...new Set(allNotes.map(n => n.note))].sort((a, b) => a - b);
   const pitchToLane = {};
@@ -640,8 +637,19 @@ function midiToNotes(midi) {
     gameNotes.push(gn);
   }
 
-  // Also offset playback notes
-  midiPlaybackNotes = midiPlaybackNotes.map(n => ({ ...n, time: n.time + leadIn }));
+  // Build MIDI playback list: mark which notes are game notes (louder)
+  // vs background accompaniment (quieter)
+  const gameNoteSet = new Set(gameNotes.map(gn => `${gn.time}-${gn.pitch}`));
+  midiPlaybackNotes = allNotes.map(n => {
+    const t = n.time + leadIn;
+    return {
+      time: t,
+      pitch: n.note,
+      velocity: n.velocity,
+      duration: n.duration,
+      isGameNote: gameNoteSet.has(`${t}-${n.note}`)
+    };
+  });
 
   if (gameNotes.length > 0) {
     const lastNote = gameNotes[gameNotes.length - 1];
@@ -970,11 +978,13 @@ function midiToFreq(note) {
 
 // MIDI auto-playback (plays the MIDI music as synth during gameplay)
 // scheduledAt: audioCtx.currentTime to start note (precise scheduling)
-function playMidiNote(pitch, velocity, duration, scheduledAt) {
+// isGameNote: if true, play at normal volume; if false, play quieter as accompaniment
+function playMidiNote(pitch, velocity, duration, scheduledAt, isGameNote) {
   if (!audioCtx) return;
   const at = scheduledAt !== undefined ? Math.max(scheduledAt, audioCtx.currentTime) : audioCtx.currentTime;
   const freq = midiToFreq(pitch);
-  const vol = (velocity / 127) * 0.06;
+  // Game notes play louder so player can hear the rhythm they need to hit
+  const vol = (velocity / 127) * (isGameNote ? 0.09 : 0.025);
 
   const osc = audioCtx.createOscillator();
   const gain = audioCtx.createGain();
@@ -1677,7 +1687,7 @@ function gameLoop(timestamp) {
       // mn.time is in ms; convert to audioCtx seconds
       const noteAudioTime = audioStartTime + totalPausedAudio + mn.time / 1000;
       if (noteAudioTime <= audioNow + lookahead) {
-        playMidiNote(mn.pitch, mn.velocity, mn.duration, noteAudioTime);
+        playMidiNote(mn.pitch, mn.velocity, mn.duration, noteAudioTime, mn.isGameNote);
         midiPlaybackIndex++;
       } else {
         break;
