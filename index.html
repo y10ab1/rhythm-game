@@ -583,43 +583,62 @@ function midiToNotes(midi) {
     });
   }
 
-  // Filter by difficulty (per-lane to avoid stacking)
-  let filtered = allNotes;
-  const minGap = difficulty === 'easy' ? 400 : difficulty === 'normal' ? 200 : 0;
+  // ---- Filter notes for playability ----
+  // 1) Per-lane minimum gap: prevent notes too close on the same lane
+  const laneMinGap = difficulty === 'easy' ? 400 : difficulty === 'normal' ? 200 : 100;
+  // 2) Global minimum gap: any two notes across all lanes
+  const globalMinGap = difficulty === 'easy' ? 120 : difficulty === 'normal' ? 60 : 30;
 
-  if (minGap > 0) {
-    filtered = [];
-    const lastPerLane = [-9999, -9999, -9999, -9999];
-    for (const n of allNotes) {
-      const lane = pitchToLane[n.note];
-      if (n.time - lastPerLane[lane] >= minGap) {
-        filtered.push(n);
-        lastPerLane[lane] = n.time;
-      }
+  let filtered = [];
+  const lastPerLane = [-9999, -9999, -9999, -9999];
+  let lastGlobalTime = -9999;
+
+  for (const n of allNotes) {
+    const lane = pitchToLane[n.note];
+    if (n.time - lastPerLane[lane] >= laneMinGap && n.time - lastGlobalTime >= globalMinGap) {
+      filtered.push(n);
+      lastPerLane[lane] = n.time;
+      lastGlobalTime = n.time;
     }
   }
 
-  // Add lead-in time
+  // 3) Build hold notes first, then remove any note that overlaps
+  //    with a hold note on the same lane
   const leadIn = 2500;
 
-  const gameNotes = filtered.map(n => {
+  const gameNotes = [];
+  // holdEndPerLane[lane] tracks the end time of the active hold on that lane
+  const holdEndPerLane = [-9999, -9999, -9999, -9999];
+
+  for (const n of filtered) {
+    const lane = pitchToLane[n.note];
+    const noteTime = n.time + leadIn;
+    const isHold = n.duration > 350 && difficulty !== 'easy';
+    const holdEnd = isHold ? noteTime + n.duration : noteTime;
+
+    // Skip if this note falls inside an active hold note on the same lane
+    if (noteTime < holdEndPerLane[lane]) continue;
+
     const gn = {
-      time: n.time + leadIn,
-      lane: pitchToLane[n.note],
+      time: noteTime,
+      lane,
       hit: false,
       missed: false,
       judged: false,
       pitch: n.note,
       velocity: n.velocity
     };
-    if (n.duration > 350 && difficulty !== 'easy') {
+
+    if (isHold) {
       gn.isHold = true;
-      gn.holdEnd = n.time + leadIn + n.duration;
+      gn.holdEnd = holdEnd;
       gn.holdHit = false;
       gn.holding = false;
+      holdEndPerLane[lane] = holdEnd;
     }
-    return gn;
-  });
+
+    gameNotes.push(gn);
+  }
 
   // Also offset playback notes
   midiPlaybackNotes = midiPlaybackNotes.map(n => ({ ...n, time: n.time + leadIn }));
