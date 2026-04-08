@@ -94,6 +94,32 @@ canvas {
 
 #fileInput { display: none; }
 
+/* ---- Song Select Overlay ---- */
+#songSelectOverlay {
+  position: absolute; inset: 0;
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(6,6,15,0.97);
+  z-index: 10;
+  transition: opacity 0.3s;
+}
+#songSelectOverlay.show { display: flex; }
+
+.menu-btn .song-title {
+  display: block;
+  font-size: 15px;
+  letter-spacing: 2px;
+}
+.menu-btn .song-artist {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: #666;
+  margin-top: 2px;
+  text-transform: uppercase;
+}
+.menu-btn:hover .song-artist { color: #aaa; }
+
 .key-hints {
   margin-top: 30px;
   display: flex; gap: 10px;
@@ -198,9 +224,7 @@ canvas {
   <div id="menuOverlay">
     <h1>Rhythm</h1>
     <div class="subtitle">MIDI RHYTHM MASTER</div>
-    <button class="menu-btn primary" id="btnFurElise">Fur Elise</button>
-    <button class="menu-btn" id="btnDemo1">Demo - Pulse</button>
-    <button class="menu-btn" id="btnDemo2">Demo - Storm</button>
+    <button class="menu-btn primary" id="btnBuiltinSongs">Built-in Songs</button>
     <button class="menu-btn" id="btnLoadMidi">Load MIDI File</button>
     <input type="file" id="fileInput" accept=".mid,.midi">
 
@@ -228,6 +252,24 @@ canvas {
       Keyboard: D F J K | Touch: Tap the lanes<br>
       ESC to pause during gameplay
     </div>
+  </div>
+
+  <!-- Built-in Songs Submenu -->
+  <div id="songSelectOverlay">
+    <div class="subtitle" style="margin-bottom:30px;letter-spacing:4px;color:#666;">BUILT-IN SONGS</div>
+    <button class="menu-btn primary" id="btnFurElise">
+      <span class="song-title">Fur Elise</span>
+      <span class="song-artist">Beethoven</span>
+    </button>
+    <button class="menu-btn" id="btnDemo1">
+      <span class="song-title">Pulse</span>
+      <span class="song-artist">Demo</span>
+    </button>
+    <button class="menu-btn" id="btnDemo2">
+      <span class="song-title">Storm</span>
+      <span class="song-artist">Demo</span>
+    </button>
+    <button class="menu-btn" id="btnBackFromSongs" style="margin-top:18px;color:#555;border-color:rgba(255,255,255,0.06);">Back</button>
   </div>
 
   <!-- Results -->
@@ -280,6 +322,7 @@ const ctx = canvas.getContext('2d');
 const menuOverlay = document.getElementById('menuOverlay');
 const resultsOverlay = document.getElementById('resultsOverlay');
 const pauseOverlay = document.getElementById('pauseOverlay');
+const songSelectOverlay = document.getElementById('songSelectOverlay');
 const fileInput = document.getElementById('fileInput');
 
 // ---- GAME STATE ----
@@ -320,6 +363,12 @@ let masterGain = null;
 // MIDI playback
 let midiPlaybackNotes = [];
 let midiPlaybackIndex = 0;
+
+// Audio sync: audioCtx.currentTime when gameplay started (set when countdown ends)
+let audioStartTime = 0;
+// totalPausedAudio: accumulated audioCtx seconds spent paused
+let totalPausedAudio = 0;
+let audioPausedAt = 0;
 
 // Canvas dimensions
 let W = 500, H = 900;
@@ -901,9 +950,10 @@ function midiToFreq(note) {
 }
 
 // MIDI auto-playback (plays the MIDI music as synth during gameplay)
-function playMidiNote(pitch, velocity, duration) {
+// scheduledAt: audioCtx.currentTime to start note (precise scheduling)
+function playMidiNote(pitch, velocity, duration, scheduledAt) {
   if (!audioCtx) return;
-  const now = audioCtx.currentTime;
+  const at = scheduledAt !== undefined ? Math.max(scheduledAt, audioCtx.currentTime) : audioCtx.currentTime;
   const freq = midiToFreq(pitch);
   const vol = (velocity / 127) * 0.06;
 
@@ -911,12 +961,12 @@ function playMidiNote(pitch, velocity, duration) {
   const gain = audioCtx.createGain();
 
   osc.type = pitch < 48 ? 'triangle' : pitch < 72 ? 'square' : 'sawtooth';
-  osc.frequency.setValueAtTime(freq, now);
+  osc.frequency.setValueAtTime(freq, at);
 
   const dur = Math.min(duration / 1000, 2);
-  gain.gain.setValueAtTime(vol, now);
-  gain.gain.setValueAtTime(vol, now + dur * 0.7);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+  gain.gain.setValueAtTime(vol, at);
+  gain.gain.setValueAtTime(vol, at + dur * 0.7);
+  gain.gain.exponentialRampToValueAtTime(0.001, at + dur);
 
   const filter = audioCtx.createBiquadFilter();
   filter.type = 'lowpass';
@@ -926,8 +976,8 @@ function playMidiNote(pitch, velocity, duration) {
   filter.connect(gain);
   gain.connect(masterGain);
 
-  osc.start(now);
-  osc.stop(now + dur + 0.01);
+  osc.start(at);
+  osc.stop(at + dur + 0.01);
 }
 
 // Background beat for demo songs
@@ -1568,6 +1618,7 @@ function drawCountdown() {
   if (elapsed >= 3500) {
     gameState = 'playing';
     startTimestamp = performance.now();
+    audioStartTime = audioCtx ? audioCtx.currentTime : 0;
     totalPaused = 0;
     lastFrameTime = 0;
     if (!currentMidiData) {
@@ -1593,14 +1644,21 @@ function gameLoop(timestamp) {
   const dt = timestamp - (lastFrameTime || timestamp);
   lastFrameTime = timestamp;
 
-  songTime = timestamp - startTimestamp - totalPaused;
+  // Use AudioContext clock as the source of truth for timing accuracy
+  songTime = audioCtx
+    ? (audioCtx.currentTime - audioStartTime - totalPausedAudio) * 1000
+    : timestamp - startTimestamp - totalPaused;
 
-  // MIDI playback
+  // MIDI playback: schedule ahead on the AudioContext timeline (lookahead ~100ms)
   if (currentMidiData && midiPlaybackNotes.length > 0) {
+    const lookahead = 0.1; // seconds
+    const audioNow = audioCtx ? audioCtx.currentTime : 0;
     while (midiPlaybackIndex < midiPlaybackNotes.length) {
       const mn = midiPlaybackNotes[midiPlaybackIndex];
-      if (mn.time <= songTime) {
-        playMidiNote(mn.pitch, mn.velocity, mn.duration);
+      // mn.time is in ms; convert to audioCtx seconds
+      const noteAudioTime = audioStartTime + totalPausedAudio + mn.time / 1000;
+      if (noteAudioTime <= audioNow + lookahead) {
+        playMidiNote(mn.pitch, mn.velocity, mn.duration, noteAudioTime);
         midiPlaybackIndex++;
       } else {
         break;
@@ -1681,6 +1739,8 @@ function startGame(noteData, songName, skipCountdown) {
   bgPulse = 0;
   shakeAmount = 0;
   totalPaused = 0;
+  totalPausedAudio = 0;
+  audioPausedAt = 0;
   midiPlaybackIndex = 0;
   lastFrameTime = 0;
   currentSongName = songName || 'Unknown';
@@ -1745,6 +1805,7 @@ function pauseGame() {
   if (gameState !== 'playing') return;
   gameState = 'paused';
   pausedAt = performance.now();
+  audioPausedAt = audioCtx ? audioCtx.currentTime : 0;
   pauseOverlay.classList.add('show');
   stopBgMusic();
 }
@@ -1752,6 +1813,7 @@ function pauseGame() {
 function resumeGame() {
   if (gameState !== 'paused') return;
   totalPaused += performance.now() - pausedAt;
+  if (audioCtx) totalPausedAudio += audioCtx.currentTime - audioPausedAt;
   gameState = 'playing';
   pauseOverlay.classList.remove('show');
   if (!currentMidiData) {
@@ -1766,6 +1828,7 @@ function returnToMenu() {
   menuOverlay.classList.remove('hidden');
   resultsOverlay.classList.remove('show');
   pauseOverlay.classList.remove('show');
+  songSelectOverlay.classList.remove('show');
   requestAnimationFrame(drawMenuBg);
 }
 
@@ -1897,6 +1960,19 @@ canvas.addEventListener('mouseup', (e) => {
 // ============================================================
 //  MENU HANDLERS
 // ============================================================
+function openSongSelect() {
+  menuOverlay.classList.add('hidden');
+  songSelectOverlay.classList.add('show');
+}
+
+function closeSongSelect() {
+  songSelectOverlay.classList.remove('show');
+  menuOverlay.classList.remove('hidden');
+}
+
+document.getElementById('btnBuiltinSongs').addEventListener('click', openSongSelect);
+document.getElementById('btnBackFromSongs').addEventListener('click', closeSongSelect);
+
 document.getElementById('btnLoadMidi').addEventListener('click', () => {
   initAudio();
   fileInput.click();
