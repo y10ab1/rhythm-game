@@ -5,4 +5,4 @@ compatibility_date = "2024-01-01"
 [[d1_databases]]
 binding = "DB"
 database_name = "rhythm-game-leaderboard"
-database_id = "" # Fill in after running: wrangler d1 create rhythm-game-leaderboard
+database_id = "6f83335c-6b90-4c64-8e28-fdd3dae20490"
