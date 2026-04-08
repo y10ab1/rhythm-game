@@ -208,6 +208,101 @@ canvas {
 #pauseOverlay.show { display: flex; }
 #pauseOverlay h2 { font-size: 36px; margin-bottom: 30px; color: #999; letter-spacing: 6px; }
 
+/* ---- Leaderboard Overlay ---- */
+#leaderboardOverlay {
+  position: absolute; inset: 0;
+  display: none; flex-direction: column;
+  align-items: center; justify-content: center;
+  background: rgba(6,6,15,0.97);
+  z-index: 10;
+}
+#leaderboardOverlay.show { display: flex; }
+#leaderboardOverlay h2 {
+  font-size: 24px; margin-bottom: 18px;
+  letter-spacing: 5px; color: #888;
+}
+
+.lb-tabs {
+  display: flex; gap: 6px; margin-bottom: 14px;
+}
+.lb-tab {
+  padding: 6px 16px;
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 4px;
+  background: transparent;
+  color: #666; font-size: 11px;
+  letter-spacing: 1px; cursor: pointer;
+  font-family: inherit; text-transform: uppercase;
+  transition: all 0.2s;
+}
+.lb-tab.active {
+  color: #fff;
+  border-color: #ff6fd8;
+  background: rgba(255,111,216,0.1);
+}
+
+.lb-table-wrap {
+  width: 90%; max-width: 420px;
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.1) transparent;
+}
+.lb-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.lb-table th {
+  color: #555; font-size: 10px; text-transform: uppercase;
+  letter-spacing: 1px; padding: 6px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  position: sticky; top: 0;
+  background: rgba(6,6,15,0.98);
+}
+.lb-table td {
+  padding: 7px 4px;
+  border-bottom: 1px solid rgba(255,255,255,0.03);
+  color: #aaa; text-align: center;
+}
+.lb-table td:first-child { color: #666; width: 30px; }
+.lb-table td:nth-child(2) { text-align: left; color: #ddd; }
+.lb-table tr:nth-child(1) td:first-child { color: #ffd700; }
+.lb-table tr:nth-child(2) td:first-child { color: #c0c0c0; }
+.lb-table tr:nth-child(3) td:first-child { color: #cd7f32; }
+.lb-table .highlight td { color: #ff6fd8; font-weight: bold; }
+
+.lb-loading { color: #555; font-size: 12px; letter-spacing: 2px; margin: 30px 0; }
+.lb-empty { color: #444; font-size: 13px; margin: 30px 0; }
+
+/* ---- Name Input (Results) ---- */
+.name-input-row {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px;
+}
+.name-input-row input {
+  width: 150px; padding: 6px 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 4px; color: #fff;
+  font-size: 13px; font-family: inherit;
+  text-align: center; letter-spacing: 1px;
+}
+.name-input-row input::placeholder { color: #444; }
+.name-input-row input:focus { outline: none; border-color: #ff6fd8; }
+.submit-score-btn {
+  padding: 6px 14px;
+  border: 1px solid rgba(255,111,216,0.4);
+  border-radius: 4px;
+  background: rgba(255,111,216,0.1);
+  color: #ff6fd8; font-size: 12px;
+  cursor: pointer; font-family: inherit;
+  letter-spacing: 1px; transition: all 0.2s;
+}
+.submit-score-btn:hover { background: rgba(255,111,216,0.2); }
+.submit-score-btn:disabled { opacity: 0.4; cursor: default; }
+.submit-status { font-size: 11px; color: #555; margin-bottom: 10px; height: 16px; }
+
 /* Mobile responsive */
 @media (max-width: 520px) {
   #gameContainer { width: 100vw; max-height: none; height: 100vh; }
@@ -226,6 +321,7 @@ canvas {
     <div class="subtitle">MIDI RHYTHM MASTER</div>
     <button class="menu-btn primary" id="btnBuiltinSongs">Built-in Songs</button>
     <button class="menu-btn" id="btnLoadMidi">Load MIDI File</button>
+    <button class="menu-btn" id="btnMenuLeaderboard">Leaderboard</button>
     <input type="file" id="fileInput" accept=".mid,.midi">
 
     <div class="settings-row">
@@ -285,8 +381,32 @@ canvas {
       <div class="result-stat"><div class="label">Good</div><div class="value good" id="rGood">0</div></div>
       <div class="result-stat"><div class="label">Miss</div><div class="value miss" id="rMiss">0</div></div>
     </div>
+    <div class="name-input-row">
+      <input type="text" id="playerNameInput" placeholder="Your Name" maxlength="20" autocomplete="off">
+      <button class="submit-score-btn" id="btnSubmitScore">Submit</button>
+    </div>
+    <div class="submit-status" id="submitStatus"></div>
     <button class="menu-btn primary" id="btnRetry">Retry</button>
+    <button class="menu-btn" id="btnViewLeaderboard">Leaderboard</button>
     <button class="menu-btn" id="btnBackMenu">Back to Menu</button>
+  </div>
+
+  <!-- Leaderboard -->
+  <div id="leaderboardOverlay">
+    <h2>LEADERBOARD</h2>
+    <div class="lb-tabs">
+      <button class="lb-tab active" data-tab="song">This Song</button>
+      <button class="lb-tab" data-tab="global">Global</button>
+    </div>
+    <div class="lb-table-wrap">
+      <div class="lb-loading" id="lbLoading">LOADING...</div>
+      <div class="lb-empty" id="lbEmpty" style="display:none">No scores yet</div>
+      <table class="lb-table" id="lbTable" style="display:none">
+        <thead><tr><th>#</th><th>Player</th><th>Score</th><th>Acc</th><th>Rank</th></tr></thead>
+        <tbody id="lbBody"></tbody>
+      </table>
+    </div>
+    <button class="menu-btn" id="btnLbBack" style="margin-top:18px;">Back</button>
   </div>
 
   <!-- Pause -->
@@ -323,10 +443,16 @@ const menuOverlay = document.getElementById('menuOverlay');
 const resultsOverlay = document.getElementById('resultsOverlay');
 const pauseOverlay = document.getElementById('pauseOverlay');
 const songSelectOverlay = document.getElementById('songSelectOverlay');
+const leaderboardOverlay = document.getElementById('leaderboardOverlay');
 const fileInput = document.getElementById('fileInput');
+
+// ---- LEADERBOARD CONFIG ----
+// Change this to your Cloudflare Worker URL after deployment
+const API_BASE = ''; // e.g. 'https://rhythm-game-api.your-subdomain.workers.dev'
 
 // ---- GAME STATE ----
 let gameState = 'menu'; // menu | countdown | playing | paused | results
+let lastResult = null; // last game result for leaderboard submission
 let notes = [];
 let score = 0;
 let combo = 0;
@@ -1829,6 +1955,30 @@ function showResults(failed) {
   const rankEl = document.getElementById('resultRank');
   rankEl.textContent = rank;
   rankEl.style.color = rankColor;
+
+  // Store result data for leaderboard submission
+  lastResult = {
+    song_name: currentSongName,
+    difficulty,
+    score,
+    accuracy: parseFloat((accuracy * 100).toFixed(1)),
+    max_combo: maxCombo,
+    perfect: judgeCount.perfect,
+    great: judgeCount.great,
+    good: judgeCount.good,
+    miss: judgeCount.miss,
+    rank
+  };
+
+  // Reset submit UI
+  const btn = document.getElementById('btnSubmitScore');
+  btn.disabled = false;
+  btn.textContent = 'Submit';
+  document.getElementById('submitStatus').textContent = '';
+
+  // Restore saved player name
+  const saved = localStorage.getItem('rhythmPlayerName');
+  if (saved) document.getElementById('playerNameInput').value = saved;
 }
 
 function pauseGame() {
@@ -1859,6 +2009,7 @@ function returnToMenu() {
   resultsOverlay.classList.remove('show');
   pauseOverlay.classList.remove('show');
   songSelectOverlay.classList.remove('show');
+  leaderboardOverlay.classList.remove('show');
   requestAnimationFrame(drawMenuBg);
 }
 
@@ -2081,6 +2232,158 @@ document.getElementById('btnRetry').addEventListener('click', () => {
 document.getElementById('btnBackMenu').addEventListener('click', returnToMenu);
 document.getElementById('btnResume').addEventListener('click', resumeGame);
 document.getElementById('btnQuit').addEventListener('click', returnToMenu);
+
+// ============================================================
+//  LEADERBOARD
+// ============================================================
+async function submitScore() {
+  if (!API_BASE || !lastResult) return;
+
+  const nameInput = document.getElementById('playerNameInput');
+  const name = nameInput.value.trim();
+  if (!name) { nameInput.focus(); return; }
+
+  // Save name for next time
+  localStorage.setItem('rhythmPlayerName', name);
+
+  const btn = document.getElementById('btnSubmitScore');
+  const status = document.getElementById('submitStatus');
+  btn.disabled = true;
+  btn.textContent = 'Submitting...';
+  status.textContent = '';
+
+  try {
+    const res = await fetch(API_BASE + '/api/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...lastResult, player_name: name })
+    });
+    const data = await res.json();
+    if (data.success) {
+      btn.textContent = 'Submitted';
+      status.textContent = '#' + data.position + ' on this song';
+      status.style.color = '#50ff78';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Submit';
+      status.textContent = data.error || 'Submit failed';
+      status.style.color = '#ff5050';
+    }
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = 'Submit';
+    status.textContent = 'Network error';
+    status.style.color = '#ff5050';
+  }
+}
+
+async function loadLeaderboard(tab) {
+  const lbLoading = document.getElementById('lbLoading');
+  const lbEmpty = document.getElementById('lbEmpty');
+  const lbTable = document.getElementById('lbTable');
+  const lbBody = document.getElementById('lbBody');
+
+  lbLoading.style.display = 'block';
+  lbEmpty.style.display = 'none';
+  lbTable.style.display = 'none';
+  lbBody.innerHTML = '';
+
+  if (!API_BASE) {
+    lbLoading.style.display = 'none';
+    lbEmpty.style.display = 'block';
+    lbEmpty.textContent = 'Leaderboard not configured';
+    return;
+  }
+
+  try {
+    let url = API_BASE + '/api/leaderboard?limit=20';
+    if (tab === 'song' && currentSongName) {
+      url += '&song=' + encodeURIComponent(currentSongName) + '&difficulty=' + encodeURIComponent(difficulty);
+    }
+
+    const res = await fetch(url);
+    const data = await res.json();
+    const list = data.leaderboard || [];
+
+    lbLoading.style.display = 'none';
+
+    if (list.length === 0) {
+      lbEmpty.style.display = 'block';
+      lbEmpty.textContent = 'No scores yet';
+      return;
+    }
+
+    // Update table headers for global view
+    const thead = lbTable.querySelector('thead tr');
+    if (tab === 'global') {
+      thead.innerHTML = '<th>#</th><th>Player</th><th>Song</th><th>Score</th><th>Rank</th>';
+    } else {
+      thead.innerHTML = '<th>#</th><th>Player</th><th>Score</th><th>Acc</th><th>Rank</th>';
+    }
+
+    list.forEach((entry, i) => {
+      const tr = document.createElement('tr');
+      if (tab === 'global') {
+        tr.innerHTML = `<td>${i + 1}</td><td>${esc(entry.player_name)}</td><td>${esc(entry.song_name)}</td><td>${Number(entry.score).toLocaleString()}</td><td>${esc(entry.rank)}</td>`;
+      } else {
+        const acc = typeof entry.accuracy === 'number' ? entry.accuracy.toFixed(1) + '%' : '-';
+        tr.innerHTML = `<td>${i + 1}</td><td>${esc(entry.player_name)}</td><td>${Number(entry.score).toLocaleString()}</td><td>${acc}</td><td>${esc(entry.rank)}</td>`;
+      }
+      lbBody.appendChild(tr);
+    });
+
+    lbTable.style.display = 'table';
+  } catch (e) {
+    lbLoading.style.display = 'none';
+    lbEmpty.style.display = 'block';
+    lbEmpty.textContent = 'Failed to load leaderboard';
+  }
+}
+
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str || '';
+  return d.innerHTML;
+}
+
+function openLeaderboard(fromResults) {
+  if (fromResults) {
+    resultsOverlay.classList.remove('show');
+  } else {
+    menuOverlay.classList.add('hidden');
+  }
+  leaderboardOverlay.classList.add('show');
+
+  // Set active tab
+  const tabs = leaderboardOverlay.querySelectorAll('.lb-tab');
+  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'song'));
+  loadLeaderboard('song');
+}
+
+document.getElementById('btnSubmitScore').addEventListener('click', submitScore);
+
+document.getElementById('btnViewLeaderboard').addEventListener('click', () => openLeaderboard(true));
+
+document.getElementById('btnMenuLeaderboard').addEventListener('click', () => openLeaderboard(false));
+
+document.getElementById('btnLbBack').addEventListener('click', () => {
+  leaderboardOverlay.classList.remove('show');
+  // Return to wherever we came from
+  if (gameState === 'results') {
+    resultsOverlay.classList.add('show');
+  } else {
+    menuOverlay.classList.remove('hidden');
+  }
+});
+
+// Tab switching
+leaderboardOverlay.querySelectorAll('.lb-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    leaderboardOverlay.querySelectorAll('.lb-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    loadLeaderboard(tab.dataset.tab);
+  });
+});
 
 // ============================================================
 //  INIT & MENU BACKGROUND

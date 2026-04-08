@@ -14,6 +14,7 @@ A browser-based rhythm game that plays MIDI files. No installation required — 
 - **Scoring system** — Perfect / Great / Good / Miss judgments with combo multiplier
 - **Audio engine** — Real-time synth playback via Web Audio API, synced to AudioContext clock
 - **Touch & keyboard** — Works on desktop (D F J K keys) and mobile (tap lanes)
+- **Leaderboard** — Global and per-song leaderboards powered by Cloudflare Workers + D1
 
 ## Controls
 
@@ -33,11 +34,38 @@ A browser-based rhythm game that plays MIDI files. No installation required — 
 
 ## Tech Stack
 
-Single `index.html` file — vanilla JS, Canvas 2D, Web Audio API. No dependencies.
+- **Frontend:** Single `index.html` — vanilla JS, Canvas 2D, Web Audio API. No dependencies.
+- **Backend (Leaderboard):** Cloudflare Workers + D1 (SQLite). See `worker/` directory.
 
 ## Deployment
 
-Pushes to `master` auto-deploy to GitHub Pages via the included workflow (`.github/workflows/pages.yml`).
+### Frontend (GitHub Pages)
+
+Pushes to `master` auto-deploy via `.github/workflows/pages.yml`.
+
+### Leaderboard API (Cloudflare)
+
+Requires [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) and a Cloudflare account.
+
+```bash
+cd worker
+
+# Create the D1 database
+wrangler d1 create rhythm-game-leaderboard
+# Copy the database_id from the output into wrangler.toml
+
+# Initialize the schema
+wrangler d1 execute rhythm-game-leaderboard --file=schema.sql --remote
+
+# Deploy the Worker
+wrangler deploy
+```
+
+After deploying, copy the Worker URL and set `API_BASE` in `index.html`:
+
+```js
+const API_BASE = 'https://rhythm-game-api.<your-subdomain>.workers.dev';
+```
 
 ## License
 
