@@ -2354,10 +2354,21 @@ function openLeaderboard(fromResults) {
   }
   leaderboardOverlay.classList.add('show');
 
-  // Set active tab
-  const tabs = leaderboardOverlay.querySelectorAll('.lb-tab');
-  tabs.forEach(t => t.classList.toggle('active', t.dataset.tab === 'song'));
-  loadLeaderboard('song');
+  // From main menu: hide "This Song" tab, show only global
+  // From results: show both tabs, default to "This Song"
+  const songTab = leaderboardOverlay.querySelector('.lb-tab[data-tab="song"]');
+  const globalTab = leaderboardOverlay.querySelector('.lb-tab[data-tab="global"]');
+  if (fromResults) {
+    songTab.style.display = '';
+    songTab.classList.add('active');
+    globalTab.classList.remove('active');
+    loadLeaderboard('song');
+  } else {
+    songTab.style.display = 'none';
+    songTab.classList.remove('active');
+    globalTab.classList.add('active');
+    loadLeaderboard('global');
+  }
 }
 
 document.getElementById('btnSubmitScore').addEventListener('click', submitScore);
