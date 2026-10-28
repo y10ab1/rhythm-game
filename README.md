@@ -1,72 +1,86 @@
-# MIDI Rhythm Master
+# Rhythm Master
 
-A browser-based rhythm game that plays MIDI files. No installation required — just open and play.
+A browser-based 4-key rhythm game. Play the built-in songs (generated with Google **Lyria 3.5**), or upload your own audio / MIDI — beats and charts are detected automatically in the browser. No installation required.
 
 **Play now:** [https://y10ab1.github.io/rhythm-game/](https://y10ab1.github.io/rhythm-game/)
 
 ## Features
 
-- **MIDI file support** — Load any `.mid` / `.midi` file and play it as a rhythm game
-- **Built-in songs** — Fur Elise (Beethoven), plus two demo tracks (Pulse, Storm)
-- **4-lane gameplay** — MIDI pitches are automatically mapped to 4 lanes
-- **Difficulty settings** — Easy / Normal / Hard with adjustable note speed
-- **Hold notes** — Long notes that require sustained input
-- **Scoring system** — Perfect / Great / Good / Miss judgments with combo multiplier
-- **Audio engine** — Real-time synth playback via Web Audio API, synced to AudioContext clock
-- **Touch & keyboard** — Works on desktop (D F J K keys) and mobile (tap lanes)
-- **Leaderboard** — Global and per-song leaderboards powered by Cloudflare Workers + D1
+- **Upload your own songs** — MP3 / WAV / OGG / M4A / FLAC / MIDI (file picker or drag & drop). Songs and their analysis are kept in the browser (IndexedDB).
+- **Automatic beat detection** — multi-band spectral-flux onset detection, tempo estimation with octave / 2:3 correction, a sub-millisecond beat-grid fit and drift correction for live recordings.
+- **4 difficulties per song** — Easy / Normal / Hard / Expert with a level number, generated from the detected onsets snapped to the beat grid (16ths, or triplets for swung music), with chords and hold notes.
+- **Built-in songs** — 4 Lyria 3.5 tracks at 90 / 118 / 144 / 175 BPM plus Für Elise (MIDI).
+- **Accurate timing** — the song clock follows the audio hardware clock (`getOutputTimestamp`, output latency compensated), input is judged at the event timestamp, not the frame time.
+- **Latency calibration** — tap-along calibration screen, plus a per-play suggestion based on your median hit offset.
+- **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
+- **Leaderboard** — global and per-song leaderboards powered by Cloudflare Workers + D1.
 
 ## Controls
 
 | Input | Action |
 |-------|--------|
-| `D` `F` `J` `K` | Hit lanes 1-4 |
+| `D` `F` `J` `K` (rebindable) | Hit lanes 1-4 |
 | `ESC` | Pause / Resume |
-| Touch | Tap lanes directly on mobile |
+| `↑` `↓` `←` `→` `Enter` | Song select: song, difficulty, start |
+| `R` | Retry on the results screen |
+| Touch | Tap / slide on the lanes |
 
-## How It Works
+Judgement windows: Perfect ±42 ms, Great ±85 ms, Good ±130 ms.
 
-1. MIDI files are parsed in-browser (no server needed)
-2. Notes are mapped to 4 lanes based on pitch distribution
-3. A per-lane and global minimum gap filter ensures playability
-4. Game timing is driven by `AudioContext.currentTime` for precise audio-visual sync
-5. MIDI playback emphasizes game notes over filtered accompaniment notes
+## Project layout
 
-## Tech Stack
+```
+index.html            markup
+css/style.css         styles
+js/main.js            menus, library, uploads, settings, calibration, leaderboard
+js/game.js            gameplay: clock, judging, rendering
+js/audio.js           Web Audio engine (latency-aware clock, hit sounds, music, MIDI synth)
+js/analyzer.js        beat / onset detection (pure JS, runs in a Worker and in Node)
+js/chart.js           chart generation per difficulty
+js/midi.js            MIDI parser
+js/storage.js         IndexedDB for uploaded songs + analysis cache
+songs/                built-in songs + manifest.json
+tools/                Lyria generation, manifest build, analyzer tests
+```
 
-- **Frontend:** Single `index.html` — vanilla JS, Canvas 2D, Web Audio API. No dependencies.
-- **Backend (Leaderboard):** Cloudflare Workers + D1 (SQLite). See `worker/` directory.
+## Tools
+
+```bash
+# generate the built-in songs with Lyria 3.5 (needs GEMINI_API_KEY)
+python3 tools/generate_lyria.py
+
+# rebuild songs/manifest.json (BPM, length, levels) — needs ffmpeg
+node tools/build_manifest.mjs
+
+# beat-detection accuracy test (synthetic drums, or real files)
+node tools/test_analyzer.mjs
+node tools/test_analyzer.mjs songs/*.mp3
+
+# chart statistics per song / difficulty
+node tools/chart_report.mjs
+```
 
 ## Deployment
 
 ### Frontend (GitHub Pages)
 
-Pushes to `master` auto-deploy via `.github/workflows/pages.yml`.
+Pushes to `master` auto-deploy via `.github/workflows/pages.yml`. It is a static site; to run locally serve the folder over HTTP (ES modules do not load from `file://`):
+
+```bash
+python3 -m http.server 8000
+```
 
 ### Leaderboard API (Cloudflare)
 
-Requires [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/install-and-update/) and a Cloudflare account.
-
 ```bash
 cd worker
-
-# Create the D1 database
-wrangler d1 create rhythm-game-leaderboard
-# Copy the database_id from the output into wrangler.toml
-
-# Initialize the schema
+wrangler d1 create rhythm-game-leaderboard     # copy database_id into wrangler.toml
 wrangler d1 execute rhythm-game-leaderboard --file=schema.sql --remote
-
-# Deploy the Worker
 wrangler deploy
 ```
 
-After deploying, copy the Worker URL and set `API_BASE` in `index.html`:
-
-```js
-const API_BASE = 'https://rhythm-game-api.<your-subdomain>.workers.dev';
-```
+Set `API_BASE` in `js/main.js` to the Worker URL.
 
 ## License
 
-MIT
+MIT. Built-in tracks were generated with Google Lyria.

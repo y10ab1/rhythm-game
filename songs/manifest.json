@@ -1,0 +1,147 @@
+[
+  {
+    "id": "neon-drift",
+    "title": "Neon Drift",
+    "artist": "Lyria 3.5",
+    "genre": "Synthwave",
+    "file": "neon-drift.mp3",
+    "color": "#50b4ff",
+    "kind": "audio",
+    "bpm": 90,
+    "duration": 105,
+    "levels": {
+      "easy": {
+        "level": 2,
+        "notes": 125
+      },
+      "normal": {
+        "level": 5,
+        "notes": 238
+      },
+      "hard": {
+        "level": 8,
+        "notes": 402
+      },
+      "expert": {
+        "level": 9,
+        "notes": 418
+      }
+    }
+  },
+  {
+    "id": "skyline-run",
+    "title": "Skyline Run",
+    "artist": "Lyria 3.5",
+    "genre": "Nu-Disco",
+    "file": "skyline-run.mp3",
+    "color": "#50ff78",
+    "kind": "audio",
+    "bpm": 118,
+    "duration": 152,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 221
+      },
+      "normal": {
+        "level": 6,
+        "notes": 407
+      },
+      "hard": {
+        "level": 10,
+        "notes": 685
+      },
+      "expert": {
+        "level": 12,
+        "notes": 795
+      }
+    }
+  },
+  {
+    "id": "voltage-rush",
+    "title": "Voltage Rush",
+    "artist": "Lyria 3.5",
+    "genre": "Electro House",
+    "file": "voltage-rush.mp3",
+    "color": "#ffc832",
+    "kind": "audio",
+    "bpm": 144,
+    "duration": 108,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 182
+      },
+      "normal": {
+        "level": 8,
+        "notes": 332
+      },
+      "hard": {
+        "level": 10,
+        "notes": 476
+      },
+      "expert": {
+        "level": 12,
+        "notes": 606
+      }
+    }
+  },
+  {
+    "id": "hyper-circuit",
+    "title": "Hyper Circuit",
+    "artist": "Lyria 3.5",
+    "genre": "Drum & Bass",
+    "file": "hyper-circuit.mp3",
+    "color": "#ff5050",
+    "kind": "audio",
+    "bpm": 175,
+    "duration": 137,
+    "levels": {
+      "easy": {
+        "level": 2,
+        "notes": 161
+      },
+      "normal": {
+        "level": 5,
+        "notes": 343
+      },
+      "hard": {
+        "level": 11,
+        "notes": 732
+      },
+      "expert": {
+        "level": 13,
+        "notes": 864
+      }
+    }
+  },
+  {
+    "id": "fur-elise",
+    "title": "Für Elise",
+    "artist": "Beethoven",
+    "genre": "Classical (MIDI)",
+    "file": "fur_elise.mid",
+    "color": "#ff6fd8",
+    "kind": "midi",
+    "bpm": 159,
+    "duration": 132,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 210
+      },
+      "normal": {
+        "level": 6,
+        "notes": 393
+      },
+      "hard": {
+        "level": 10,
+        "notes": 662
+      },
+      "expert": {
+        "level": 12,
+        "notes": 709
+      }
+    }
+  }
+]

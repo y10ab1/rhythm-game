@@ -47,7 +47,7 @@ export default {
         if (!songName) return json({ error: 'Missing song_name' }, 400);
 
         const difficulty = body.difficulty;
-        if (!['easy', 'normal', 'hard'].includes(difficulty)) {
+        if (!['easy', 'normal', 'hard', 'expert'].includes(difficulty)) {
           return json({ error: 'Invalid difficulty' }, 400);
         }
 
