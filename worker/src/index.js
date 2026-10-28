@@ -77,9 +77,9 @@ export default {
 
         // Return the rank of this score for the song
         const rankResult = await env.DB.prepare(
-          `SELECT COUNT(*) as position FROM scores
-           WHERE song_name = ? AND difficulty = ? AND score > ?`
-        ).bind(songName, difficulty, score).first();
+          `SELECT COUNT(DISTINCT player_name) as position FROM scores
+           WHERE song_name = ? AND difficulty = ? AND score > ? AND player_name != ?`
+        ).bind(songName, difficulty, score, playerName).first();
 
         return json({
           success: true,
@@ -96,22 +96,27 @@ export default {
 
         let query, params;
 
+        // Every submission is stored; the boards show each player's best per song+difficulty
+        const best = `id = (SELECT b.id FROM scores b WHERE b.player_name = s.player_name
+                              AND b.song_name = s.song_name AND b.difficulty = s.difficulty
+                              ORDER BY b.score DESC, b.id ASC LIMIT 1)`;
+
         if (song && diff) {
           // Per-song leaderboard
           query = `SELECT player_name, score, accuracy, max_combo, rank, created_at
-                   FROM scores WHERE song_name = ? AND difficulty = ?
+                   FROM scores s WHERE song_name = ? AND difficulty = ? AND ${best}
                    ORDER BY score DESC LIMIT ?`;
           params = [song, diff, limit];
         } else if (song) {
           // Per-song, all difficulties
           query = `SELECT player_name, score, accuracy, max_combo, rank, difficulty, created_at
-                   FROM scores WHERE song_name = ?
+                   FROM scores s WHERE song_name = ? AND ${best}
                    ORDER BY score DESC LIMIT ?`;
           params = [song, limit];
         } else {
           // Global leaderboard
           query = `SELECT player_name, song_name, score, accuracy, max_combo, rank, difficulty, created_at
-                   FROM scores ORDER BY score DESC LIMIT ?`;
+                   FROM scores s WHERE ${best} ORDER BY score DESC LIMIT ?`;
           params = [limit];
         }
 

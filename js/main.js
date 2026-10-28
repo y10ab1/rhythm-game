@@ -19,7 +19,7 @@ const game = new Game(canvas, audio, { onEnd: showResults });
 
 // ---------- settings ----------
 const DEFAULTS = {
-  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false,
+  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true,
   keys: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'], keyLabels: ['D', 'F', 'J', 'K'],
 };
 let settings = { ...DEFAULTS, ...safeJSON(localStorage.getItem('rhythmSettings'), {}) };
@@ -431,35 +431,79 @@ function showResults(r) {
     accuracy: +(r.accuracy * 100).toFixed(2), max_combo: r.maxCombo,
     perfect: r.counts.perfect, great: r.counts.great, good: r.counts.good, miss: r.counts.miss, rank: r.rank,
   };
+  resultFailed = !!r.failed;
   $('btnSubmit').disabled = !!r.failed;
   $('btnSubmit').textContent = 'Submit';
   $('submitStatus').textContent = r.failed ? 'Failed runs cannot be submitted' : '';
-  $('playerName').value = localStorage.getItem('rhythmPlayerName') || '';
+  $('playerName').value = playerName();
+  nameSubmitted = '';
+  if (!r.failed && settings.autoSubmit) submitScore(true);
 }
 $('btnRetry').addEventListener('click', () => startSong(playing.song, playing.difficulty));
 $('btnResBack').addEventListener('click', () => { game.stop(); show('select'); renderSongList(); });
 
 // ---------- leaderboard ----------
 let lbReturn = 'title';
-async function submitScore() {
+let nameSubmitted = '', resultFailed = false;
+async function submitScore(auto = false) {
   const name = $('playerName').value.trim();
   if (!name) return $('playerName').focus();
-  localStorage.setItem('rhythmPlayerName', name);
+  setPlayerName(name, false);
   const btn = $('btnSubmit'), st = $('submitStatus');
   btn.disabled = true; btn.textContent = '…';
+  st.style.color = ''; st.textContent = auto ? `Submitting as ${name}…` : '';
   try {
     const res = await fetch(API_BASE + '/api/score', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ...lastResult, player_name: name }),
     });
     const data = await res.json();
-    if (data.success) { btn.textContent = 'Done'; st.textContent = `#${data.position} on this song`; st.style.color = '#5dffa8'; }
+    if (data.success) {
+      nameSubmitted = name;
+      btn.textContent = 'Done';
+      st.textContent = `${name} · #${data.position} on this song`; st.style.color = '#5dffa8';
+    }
     else { btn.disabled = false; btn.textContent = 'Submit'; st.textContent = data.error || 'Submit failed'; st.style.color = '#ff4d5e'; }
   } catch {
     btn.disabled = false; btn.textContent = 'Submit'; st.textContent = 'Network error'; st.style.color = '#ff4d5e';
   }
 }
-$('btnSubmit').addEventListener('click', submitScore);
+$('btnSubmit').addEventListener('click', () => submitScore(false));
+
+// ---------- player name (auto-assigned, cached in localStorage) ----------
+const NAME_ADJ = ['Neon', 'Swift', 'Lucky', 'Cosmic', 'Turbo', 'Pixel', 'Sunny', 'Mellow', 'Jazzy', 'Funky', 'Stellar', 'Hyper', 'Cyber', 'Groovy', 'Sonic', 'Velvet'];
+const NAME_ANI = ['Fox', 'Panda', 'Otter', 'Tiger', 'Koala', 'Falcon', 'Bunny', 'Whale', 'Lynx', 'Cat', 'Wolf', 'Dolphin', 'Owl', 'Shiba', 'Penguin', 'Gecko'];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function randomName() {
+  return `${pick(NAME_ADJ)}${pick(NAME_ANI)}_${Math.floor(Math.random() * 900 + 100)}`.slice(0, 20);
+}
+function playerName() {
+  let n = (localStorage.getItem('rhythmPlayerName') || '').trim();
+  if (!n) { n = randomName(); localStorage.setItem('rhythmPlayerName', n); }
+  return n;
+}
+function setPlayerName(n, syncInputs = true) {
+  n = n.trim().slice(0, 20);
+  if (!n) return;
+  localStorage.setItem('rhythmPlayerName', n);
+  if (syncInputs) { $('playerName').value = n; $('setName').value = n; }
+}
+function rerollName() {
+  setPlayerName(randomName());
+  if (lastResult && !resultFailed) { $('btnSubmit').disabled = false; $('btnSubmit').textContent = 'Submit'; }
+}
+playerName();
+$('btnNameDice').addEventListener('click', rerollName);
+$('btnSetNameDice').addEventListener('click', rerollName);
+$('playerName').addEventListener('input', e => {
+  $('setName').value = e.target.value;
+  if (!resultFailed && e.target.value.trim() !== nameSubmitted) { $('btnSubmit').disabled = false; $('btnSubmit').textContent = 'Submit'; }
+});
+$('setName').addEventListener('change', e => {
+  const n = e.target.value.trim();
+  if (n) setPlayerName(n); else e.target.value = playerName();
+});
+$('setAutoSubmit').addEventListener('change', e => { settings.autoSubmit = e.target.checked; saveSettings(); });
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
@@ -525,6 +569,8 @@ function syncSettingsUI() {
   $('setHit').value = settings.hitsound; $('outHit').textContent = settings.hitsound;
   $('setTiming').checked = settings.showTiming;
   $('setNoFail').checked = settings.noFail;
+  $('setAutoSubmit').checked = settings.autoSubmit;
+  $('setName').value = playerName();
   renderKeys();
 }
 $('btnSettingsBack').addEventListener('click', () => show(settingsReturn === 'settings' || settingsReturn === 'calibrate' ? 'title' : settingsReturn));

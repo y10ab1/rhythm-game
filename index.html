@@ -62,6 +62,8 @@
       <label class="row"><span>Hit sound</span><input type="range" id="setHit" min="0" max="100"><output id="outHit"></output></label>
       <label class="row"><span>Show FAST/SLOW</span><input type="checkbox" id="setTiming"></label>
       <label class="row"><span>No fail</span><input type="checkbox" id="setNoFail"></label>
+      <div class="row keys-row name-setting"><span>Player name</span><input type="text" id="setName" maxlength="20" autocomplete="off" spellcheck="false"><button class="btn small" id="btnSetNameDice" title="Random name">🎲</button></div>
+      <label class="row"><span>Auto-submit</span><input type="checkbox" id="setAutoSubmit"></label>
       <div class="row keys-row"><span>Keys</span><button class="btn small" id="btnRebind">Change</button><span class="keys inline" id="settingsKeys"></span></div>
     </div>
   </section>
@@ -104,7 +106,8 @@
     </div>
     <div class="res-offset" id="resOffset"></div>
     <div class="name-row">
-      <input type="text" id="playerName" placeholder="Your name" maxlength="20" autocomplete="off">
+      <input type="text" id="playerName" placeholder="Your name" maxlength="20" autocomplete="off" spellcheck="false">
+      <button class="btn small" id="btnNameDice" title="Random name">🎲</button>
       <button class="btn small" id="btnSubmit">Submit</button>
     </div>
     <div class="submit-status" id="submitStatus"></div>
