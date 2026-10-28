@@ -51,6 +51,43 @@ SONGS = {
         "syncopated hi-hats, aggressive reese bass stabs and a soaring synth lead. Structure: "
         "short intro, build-up, drop, breakdown, second drop, outro."
     ),
+    "sunset-boulevard": (
+        "A groovy 1980s Japanese city pop instrumental at exactly 106 BPM in 4/4. "
+        "Tight live-sounding drums, punchy slap bass, bright electric piano chords, funky clean "
+        "guitar cutting, brass section hits and a catchy synth lead melody. Structure: intro, "
+        "verse, pre-chorus, chorus, guitar solo, final chorus, outro."
+    ),
+    "groove-machine": (
+        "A tight, danceable 1970s funk / disco instrumental at exactly 112 BPM in 4/4. "
+        "Four-on-the-floor kick, open hi-hats on the off-beats, syncopated funky bass riffs, "
+        "chicken-scratch guitar, punchy horn stabs and string swells. Structure: intro, groove, "
+        "horn break, chorus, bass break, final chorus, outro."
+    ),
+    "starlight-stage": (
+        "An energetic K-pop dance instrumental at exactly 124 BPM in 4/4. "
+        "Hard-hitting dance drums with claps, deep 808 bass, glossy synth chords, "
+        "a memorable synth hook, rhythmic vocal-chop-like synth stabs (no real vocals) and a "
+        "powerful dance-break drop. Structure: intro, verse, pre-chorus build, chorus drop, "
+        "dance break, final chorus, outro."
+    ),
+    "pixel-quest": (
+        "An upbeat 8-bit chiptune video game boss-battle track at exactly 150 BPM in 4/4. "
+        "Square-wave lead melody with fast arpeggios, triangle bass, punchy noise-channel drums "
+        "with clear kick and snare. Structure: intro fanfare, main theme, faster arpeggio "
+        "section, bridge, main theme reprise, victory outro."
+    ),
+    "neon-riot": (
+        "A fast, high-energy pop-punk / J-rock instrumental at exactly 168 BPM in 4/4. "
+        "Driving live drums with loud snare backbeats and crash accents, distorted power-chord "
+        "guitars, melodic lead guitar riffs and a pumping bass. Structure: intro riff, verse, "
+        "chorus, guitar solo, breakdown, final chorus, outro."
+    ),
+    "fiesta-caliente": (
+        "A hot Latin reggaeton / moombahton instrumental at exactly 96 BPM in 4/4. "
+        "Classic dembow drum rhythm with punchy kick and snappy rim shots, deep bass, "
+        "Latin percussion (congas, timbales, shakers), plucky synth and Spanish guitar melody "
+        "and brass hits. Structure: intro, verse groove, chorus, breakdown, final chorus, outro."
+    ),
 }
 
 

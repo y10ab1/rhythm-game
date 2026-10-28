@@ -78,7 +78,7 @@ export function midiToSong(midi) {
 
   // pair note on/off per track
   const notes = [];
-  for (const track of midi.tracks) {
+  midi.tracks.forEach((track, ti) => {
     const open = {};
     for (const e of track) {
       const key = e.ch * 128 + e.note;
@@ -87,36 +87,72 @@ export function midiToSong(midi) {
         (open[key] ||= []).push(e);
       } else if (e.type === 'off' && open[key]?.length) {
         const s = open[key].shift();
-        notes.push({ tick: s.tick, t: tickToSec(s.tick), pitch: s.note, vel: s.vel, dur: Math.max(0.05, tickToSec(e.tick) - tickToSec(s.tick)) });
+        notes.push({ tick: s.tick, t: tickToSec(s.tick), pitch: s.note, vel: s.vel, dur: Math.max(0.05, tickToSec(e.tick) - tickToSec(s.tick)), track: ti });
       }
     }
-    for (const list of Object.values(open)) for (const s of list) notes.push({ tick: s.tick, t: tickToSec(s.tick), pitch: s.note, vel: s.vel, dur: 0.3 });
-  }
+    for (const list of Object.values(open)) for (const s of list) notes.push({ tick: s.tick, t: tickToSec(s.tick), pitch: s.note, vel: s.vel, dur: 0.3, track: ti });
+  });
   notes.sort((a, b) => a.t - b.t || b.pitch - a.pitch);
   if (!notes.length) throw new Error('No notes found in this MIDI file');
 
-  // cluster simultaneous notes into onsets
-  const onsets = { t: [], s: [], c: [], sus: [], level: [] };
+  // melody voice: the highest-pitched track that carries a real share of the notes;
+  // single-track files fall back to "top note of each chord above middle C"
+  const byTrack = {};
+  for (const n of notes) (byTrack[n.track] ||= []).push(n.pitch);
+  const tracks = Object.entries(byTrack).filter(([, p]) => p.length >= notes.length * 0.1);
+  const melodyTrack = tracks.length >= 2
+    ? +tracks.sort((a, b) => b[1].reduce((s, x) => s + x, 0) / b[1].length - a[1].reduce((s, x) => s + x, 0) / a[1].length)[0][0]
+    : -1;
+
+  // cluster simultaneous notes
+  const groups = [];
   for (let i = 0; i < notes.length;) {
     let j = i;
-    while (j < notes.length && notes[j].t - notes[i].t < 0.02) j++;
-    const group = notes.slice(i, j);
-    const top = group.reduce((a, b) => (b.pitch > a.pitch ? b : a));
-    const maxVel = Math.max(...group.map(n => n.vel));
-    const tk = group[0].tick;
-    for (const n of group) n.g = group[0].t;
-    const level = tk % barTicks === 0 ? 0 : tk % tpb === 0 ? 1 : tk % (tpb / 2) === 0 ? 2 : 3;
-    onsets.t.push(group[0].t);
-    onsets.s.push((maxVel / 127) * (0.75 + 0.25 * Math.min(1, group.length / 3)));
-    onsets.c.push(top.pitch / 12); // pitch drives lane choice
-    onsets.sus.push(top.dur);
-    onsets.level.push(level);
+    while (j < notes.length && notes[j].t - notes[i].t < 0.03) j++;
+    groups.push(notes.slice(i, j));
     i = j;
   }
 
-  const lastTick = Math.max(...notes.map(n => n.tick));
+  // performance-recorded MIDI drifts off the written grid (rubato). Track the
+  // drift like a phase-locked loop so every onset snaps to the right 16th,
+  // otherwise metric levels (and therefore the chart) come out random.
+  const unit = tpb / 4;
+  let drift = 0;
+  const qTicks = groups.map(g => {
+    const raw = g[0].tick - drift;
+    const q = Math.round(raw / unit) * unit;
+    const err = raw - q;
+    if (Math.abs(err) < unit * 0.45) drift += err * 0.6;
+    return q;
+  });
+  const levelOf = tk => (tk % barTicks === 0 ? 0 : tk % tpb === 0 ? 1 : tk % (tpb / 2) === 0 ? 2 : 3);
+
+  const onsets = { t: [], s: [], c: [], sus: [], level: [], melody: [] };
+  for (let gi = 0; gi < groups.length; gi++) {
+    const group = groups[gi];
+    const top = group.reduce((a, b) => (b.pitch > a.pitch ? b : a));
+    const mel = melodyTrack >= 0 ? group.filter(n => n.track === melodyTrack) : (top.pitch >= 60 ? [top] : []);
+    const lead = mel.length ? mel.reduce((a, b) => (b.pitch > a.pitch ? b : a)) : top;
+    const maxVel = Math.max(...group.map(n => n.vel));
+    for (const n of group) n.g = group[0].t;
+    onsets.t.push(group[0].t);
+    onsets.s.push((mel.length ? 1 : 0.45) * (0.6 + 0.4 * maxVel / 127));
+    onsets.c.push(lead.pitch);
+    onsets.sus.push(lead.dur);
+    onsets.level.push(levelOf(qTicks[gi]));
+    onsets.melody.push(mel.length ? 1 : 0);
+  }
+
+  // beat times follow the performance: interpolate between quantized onsets
+  const lastQ = qTicks[qTicks.length - 1];
   const beats = [];
-  for (let tk = 0; tk <= lastTick + tpb; tk += tpb) beats.push(tickToSec(tk));
+  let k = 0;
+  for (let tk = 0; tk <= lastQ + tpb; tk += tpb) {
+    while (k + 1 < qTicks.length && qTicks[k + 1] <= tk) k++;
+    const k2 = Math.min(qTicks.length - 1, k + 1);
+    const t0 = onsets.t[k], t1 = onsets.t[k2], q0 = qTicks[k], q1 = qTicks[k2];
+    beats.push(q1 > q0 ? t0 + (t1 - t0) * (tk - q0) / (q1 - q0) : tickToSec(tk));
+  }
   const duration = Math.max(...notes.map(n => n.t + n.dur)) + 0.5;
   const firstTempo = tempos.length ? tempos[0].tempo : 500000;
 

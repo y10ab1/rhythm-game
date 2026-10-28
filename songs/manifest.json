@@ -29,6 +29,93 @@
     }
   },
   {
+    "id": "fiesta-caliente",
+    "title": "Fiesta Caliente",
+    "artist": "Lyria 3.5",
+    "genre": "Reggaeton",
+    "file": "fiesta-caliente.mp3",
+    "color": "#ff8a3d",
+    "kind": "audio",
+    "bpm": 92,
+    "duration": 106,
+    "levels": {
+      "easy": {
+        "level": 2,
+        "notes": 129
+      },
+      "normal": {
+        "level": 5,
+        "notes": 246
+      },
+      "hard": {
+        "level": 8,
+        "notes": 418
+      },
+      "expert": {
+        "level": 12,
+        "notes": 590
+      }
+    }
+  },
+  {
+    "id": "sunset-boulevard",
+    "title": "Sunset Boulevard",
+    "artist": "Lyria 3.5",
+    "genre": "City Pop",
+    "file": "sunset-boulevard.mp3",
+    "color": "#ff7eb6",
+    "kind": "audio",
+    "bpm": 105,
+    "duration": 111,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 140
+      },
+      "normal": {
+        "level": 5,
+        "notes": 269
+      },
+      "hard": {
+        "level": 9,
+        "notes": 448
+      },
+      "expert": {
+        "level": 12,
+        "notes": 572
+      }
+    }
+  },
+  {
+    "id": "groove-machine",
+    "title": "Groove Machine",
+    "artist": "Lyria 3.5",
+    "genre": "Funk / Disco",
+    "file": "groove-machine.mp3",
+    "color": "#c38bff",
+    "kind": "audio",
+    "bpm": 112,
+    "duration": 125,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 182
+      },
+      "normal": {
+        "level": 6,
+        "notes": 330
+      },
+      "hard": {
+        "level": 9,
+        "notes": 534
+      },
+      "expert": {
+        "level": 13,
+        "notes": 721
+      }
+    }
+  },
+  {
     "id": "skyline-run",
     "title": "Skyline Run",
     "artist": "Lyria 3.5",
@@ -58,6 +145,35 @@
     }
   },
   {
+    "id": "starlight-stage",
+    "title": "Starlight Stage",
+    "artist": "Lyria 3.5",
+    "genre": "K-Pop Dance",
+    "file": "starlight-stage.mp3",
+    "color": "#ffd6f0",
+    "kind": "audio",
+    "bpm": 125,
+    "duration": 126,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 185
+      },
+      "normal": {
+        "level": 6,
+        "notes": 354
+      },
+      "hard": {
+        "level": 8,
+        "notes": 485
+      },
+      "expert": {
+        "level": 12,
+        "notes": 718
+      }
+    }
+  },
+  {
     "id": "voltage-rush",
     "title": "Voltage Rush",
     "artist": "Lyria 3.5",
@@ -83,6 +199,64 @@
       "expert": {
         "level": 12,
         "notes": 606
+      }
+    }
+  },
+  {
+    "id": "pixel-quest",
+    "title": "Pixel Quest",
+    "artist": "Lyria 3.5",
+    "genre": "Chiptune",
+    "file": "pixel-quest.mp3",
+    "color": "#3dffe0",
+    "kind": "audio",
+    "bpm": 150,
+    "duration": 106,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 172
+      },
+      "normal": {
+        "level": 7,
+        "notes": 328
+      },
+      "hard": {
+        "level": 10,
+        "notes": 505
+      },
+      "expert": {
+        "level": 12,
+        "notes": 620
+      }
+    }
+  },
+  {
+    "id": "neon-riot",
+    "title": "Neon Riot",
+    "artist": "Lyria 3.5",
+    "genre": "Pop-Punk / J-Rock",
+    "file": "neon-riot.mp3",
+    "color": "#ff3d8a",
+    "kind": "audio",
+    "bpm": 160,
+    "duration": 101,
+    "levels": {
+      "easy": {
+        "level": 2,
+        "notes": 108
+      },
+      "normal": {
+        "level": 5,
+        "notes": 233
+      },
+      "hard": {
+        "level": 10,
+        "notes": 482
+      },
+      "expert": {
+        "level": 12,
+        "notes": 591
       }
     }
   },
@@ -123,24 +297,24 @@
     "file": "fur_elise.mid",
     "color": "#ff6fd8",
     "kind": "midi",
-    "bpm": 159,
-    "duration": 132,
+    "bpm": 156,
+    "duration": 105,
     "levels": {
       "easy": {
-        "level": 3,
-        "notes": 210
+        "level": 2,
+        "notes": 93
       },
       "normal": {
-        "level": 6,
-        "notes": 393
+        "level": 5,
+        "notes": 270
       },
       "hard": {
-        "level": 10,
-        "notes": 662
+        "level": 11,
+        "notes": 565
       },
       "expert": {
         "level": 12,
-        "notes": 709
+        "notes": 601
       }
     }
   }

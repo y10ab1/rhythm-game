@@ -3,7 +3,7 @@
 //  Pure functions, no DOM. Used by the browser (worker) and Node tools.
 // ============================================================
 
-export const ANALYZER_VERSION = 4;
+export const ANALYZER_VERSION = 5;
 export const ANALYSIS_SR = 22050;
 
 const N = 1024;   // FFT size (46 ms @ 22.05 kHz)
@@ -372,7 +372,9 @@ export async function analyzeAudio(samples, sr = ANALYSIS_SR, onProgress) {
   // real beat is twice as fast (e.g. drum & bass read as 87 instead of 174).
   const midS = gaussianSmooth(mi, 1.5);
   const onBeat = combScore(midS, P, phi), offBeat = combScore(midS, P, (phi + P / 2) % P);
-  if (60 * fps / P < 100 && offBeat > onBeat * 0.8) {
+  // (a dembow-style snare/rim on the "and" must not outvote kicks that clearly sit on the beat)
+  const kickOn = combScore(lowS, P, phi), kickOff = combScore(lowS, P, (phi + P / 2) % P);
+  if (60 * fps / P < 100 && offBeat > onBeat * 0.8 && kickOff > kickOn * 0.5) {
     const g = fitGrid(odfS, 2 * 60 * fps / P, fps);
     P = g.P; phi = g.phi;
     if (combScore(lowS, P, (phi + P / 2) % P) > combScore(lowS, P, phi) * 1.15) phi = (phi + P / 2) % P;

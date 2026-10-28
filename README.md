@@ -9,7 +9,7 @@ A browser-based 4-key rhythm game. Play the built-in songs (generated with Googl
 - **Upload your own songs** — MP3 / WAV / OGG / M4A / FLAC / MIDI (file picker or drag & drop). Songs and their analysis are kept in the browser (IndexedDB).
 - **Automatic beat detection** — multi-band spectral-flux onset detection, tempo estimation with octave / 2:3 correction, a sub-millisecond beat-grid fit and drift correction for live recordings.
 - **4 difficulties per song** — Easy / Normal / Hard / Expert with a level number, generated from the detected onsets snapped to the beat grid (16ths, or triplets for swung music), with chords and hold notes.
-- **Built-in songs** — 4 Lyria 3.5 tracks at 90 / 118 / 144 / 175 BPM plus Für Elise (MIDI).
+- **Built-in songs** — 10 Lyria 3.5 tracks in different styles (synthwave, reggaeton, city pop, funk/disco, nu-disco, K-pop, electro house, chiptune, pop-punk, drum & bass; 90–175 BPM) plus Für Elise (a grid-exact MIDI arrangement, `tools/make_fur_elise.py`).
 - **Accurate timing** — the song clock follows the audio hardware clock (`getOutputTimestamp`, output latency compensated), input is judged at the event timestamp, not the frame time.
 - **Latency calibration** — tap-along calibration screen, plus a per-play suggestion based on your median hit offset.
 - **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
