@@ -135,7 +135,7 @@ export class Game {
     this.notes = notes.map((n, i) => ({
       id: i, t: n.time * 1000, lane: n.lane, end: n.end ? n.end * 1000 : 0,
       state: 0,      // 0 pending, 1 holding, 2 done(hit), 3 missed
-      tail: 0,       // hold tail: 0 pending, 1 ok, 2 broken
+      tail: 0,       // hold tail: 0 pending, 1 ok, 2 released early (GOOD) or head missed
     }));
     this.laneNotes = [[], [], [], []];
     for (const n of this.notes) this.laneNotes[n.lane].push(n);
@@ -186,7 +186,7 @@ export class Game {
     // a hold whose key was let go during the pause is broken
     for (let l = 0; l < 4; l++) {
       const n = this.holding[l];
-      if (n && !this.keyDown[l]) { this.holding[l] = null; this.breakHold(n); }
+      if (n && !this.keyDown[l]) { this.holding[l] = null; this.breakHold(n, this.songTime ?? 0); }
     }
     await this.audio.resume();
     this.anchorPerf = null;
@@ -230,7 +230,7 @@ export class Game {
     this.holding[lane] = null;
     const t = this.songAt(perf);
     if (t >= n.end - WINDOWS.good) this.finishHold(n);
-    else this.breakHold(n);
+    else this.breakHold(n, t);
   }
 
   // ---------- judging ----------
@@ -281,9 +281,15 @@ export class Game {
     this.burst(n.lane, TIERS[0], true);
   }
 
-  breakHold(n) {
+  // released early: past the halfway point is a GOOD tail (combo kept), before it a miss
+  breakHold(n, t) {
     n.state = 2; n.tail = 2;
-    this.registerMiss(n.lane);
+    if (t >= n.t + (n.end - n.t) / 2) {
+      this.award(TIERS[2]);
+      this.lastJudge = { tier: TIERS[2], time: performance.now(), diff: null, lane: n.lane };
+    } else {
+      this.registerMiss(n.lane);
+    }
   }
 
   // ---------- effects ----------
@@ -576,7 +582,7 @@ export class Game {
         g.fillStyle = j.tier.color;
         g.font = `800 26px ${FONT}`;
         g.fillText(j.tier.label, 0, 0);
-        if (this.settings.showTiming && j.tier.key !== 'perfect' && j.tier.key !== 'miss') {
+        if (this.settings.showTiming && j.diff != null && j.tier.key !== 'perfect' && j.tier.key !== 'miss') {
           g.font = `700 12px ${FONT}`;
           g.fillStyle = j.diff < 0 ? '#5ab8ff' : '#ff9a5a';
           g.fillText(`${j.diff < 0 ? 'FAST' : 'SLOW'} ${Math.round(Math.abs(j.diff))}ms`, 0, 22);
