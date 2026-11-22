@@ -10,6 +10,7 @@ const rgba = (lane, a) => `rgba(${LANE_RGB[lane][0]},${LANE_RGB[lane][1]},${LANE
 
 // Judgement windows (ms, +/-)
 export const WINDOWS = { perfect: 42, great: 85, good: 130, bad: 165 };
+const SWEEP_LENIENCY = 1.3;   // sweep steps are judged with windows this much wider
 const TIERS = [
   { key: 'perfect', label: 'PERFECT', win: WINDOWS.perfect, color: '#ffe066', weight: 1, hp: 1.2 },
   { key: 'great', label: 'GREAT', win: WINDOWS.great, color: '#5dffa8', weight: 0.75, hp: 0.8 },
@@ -189,7 +190,9 @@ export class Game {
   // it is holding a hold note: drifting off would break the hold and "press" the neighbouring lane,
   // eating that lane's next note as an early miss before the player gets to tap it.
   laneAfterMove(lane, clientX) {
-    if (this.holding[lane]) return lane;
+    const h = this.holding[lane];
+    // a slide about to bend: the finger may slide over into the next lane
+    if (h && !(h.path && h.seg < h.path.length && (this.songTime ?? 0) >= h.path[h.seg].t - 300)) return lane;
     const rect = this.canvas.getBoundingClientRect();
     const x = (clientX - rect.left) / rect.width * this.W;
     const pos = (x - this.fieldX) / this.laneW;           // lane centre at l + 0.5
@@ -234,8 +237,45 @@ export class Game {
     return this.anchorSong + (perf - this.anchorPerf);
   }
 
+  // ---------- scroll speed (soflan) ----------
+  // speed: [{ time (s), x }] linearly interpolated; scrollPos(t) is its integral in ms, so the
+  // distance of a note from the judge line is scrollPos(note) - scrollPos(now). Judging never changes.
+  buildScroll(speed) {
+    const pts = (speed || []).map(p => ({ t: p.time * 1000, x: Math.max(0.2, p.x) })).sort((a, b) => a.t - b.t);
+    this.scroll = pts.length ? pts : null;
+    this.speedMarks = [];
+    this.markIdx = 0;
+    this.minSpeed = 1;
+    if (!pts.length) return;
+    pts[0].c = pts[0].t;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i];
+      b.c = a.c + (a.x + b.x) / 2 * (b.t - a.t);
+      if (Math.abs(b.x - a.x) > 0.1) this.speedMarks.push({ t: b.t, x: b.x, up: b.x > a.x });
+    }
+    this.minSpeed = Math.min(1, ...pts.map(p => p.x));
+  }
+  scrollPos(time) {
+    const p = this.scroll;
+    if (!p) return time;
+    if (time <= p[0].t) return p[0].c - p[0].x * (p[0].t - time);
+    const i = Math.min(p.length - 1, upperT(p, time) - 1), a = p[i];
+    if (i === p.length - 1) return a.c + a.x * (time - a.t);
+    const b = p[i + 1], dt = time - a.t, slope = (b.x - a.x) / Math.max(1e-6, b.t - a.t);
+    return a.c + a.x * dt + slope * dt * dt / 2;
+  }
+  speedAt(time) {
+    const p = this.scroll;
+    if (!p) return 1;
+    if (time <= p[0].t) return p[0].x;
+    const i = upperT(p, time) - 1;
+    if (i >= p.length - 1) return p[p.length - 1].x;
+    const a = p[i], b = p[i + 1];
+    return a.x + (b.x - a.x) * (time - a.t) / Math.max(1e-6, b.t - a.t);
+  }
+
   // ---------- lifecycle ----------
-  start({ notes, beats, downbeat, barBeats, music, title, songId, difficulty, settings }) {
+  start({ notes, speed, beats, downbeat, barBeats, music, title, songId, difficulty, settings }) {
     this.settings = settings;
     this.title = title;
     this.difficulty = difficulty;
@@ -252,12 +292,22 @@ export class Game {
       id: i, t: n.time * 1000, lane: n.lane, end: n.end ? n.end * 1000 : 0,
       state: 0,      // 0 pending, 1 holding, 2 done(hit), 3 missed
       tail: 0,       // hold tail: 0 pending, 1 ok, 2 released early (GOOD) or head missed
+      // slide: the lanes it bends into, each judged when the next key takes over; cur = lane held now
+      path: n.path && n.end ? n.path.map(p => ({ t: p.time * 1000, lane: p.lane })) : null, seg: 0, cur: n.lane,
+      sweep: n.sweep ?? null,
     }));
+    this.sweeps = new Map();
+    for (const n of this.notes) if (n.sweep != null) {
+      if (!this.sweeps.has(n.sweep)) this.sweeps.set(n.sweep, { notes: [], missed: false });
+      this.sweeps.get(n.sweep).notes.push(n);
+    }
     this.laneNotes = [[], [], [], []];
     for (const n of this.notes) this.laneNotes[n.lane].push(n);
     this.laneHead = [0, 0, 0, 0];
     this.holding = [null, null, null, null];
-    this.total = this.notes.length + this.notes.filter(n => n.end).length;
+    this.floating = [];   // slides let go just before a bend: the next key may still pick them up
+    this.total = this.notes.length + this.notes.filter(n => n.end).length + this.notes.reduce((s, n) => s + (n.path?.length || 0), 0);
+    this.buildScroll(speed);
 
     this.counts = { perfect: 0, great: 0, good: 0, miss: 0 };
     this.weightSum = 0;
@@ -280,7 +330,7 @@ export class Game {
     this.lastNoteMs = last || Infinity;
     this.startPerf = performance.now();
     this.lastMilestone = 0;
-    const leadMs = Math.max(2200, this.approach + 900 - first);
+    const leadMs = Math.max(2200, this.approach / this.minSpeed + 900 - first);
 
     const ctx = this.audio.ensure();
     this.t0 = ctx.currentTime + 0.12 + leadMs / 1000;
@@ -310,6 +360,8 @@ export class Game {
       const n = this.holding[l];
       if (n && !this.keyDown[l]) { this.holding[l] = null; this.breakHold(n, this.songTime ?? 0); }
     }
+    for (const n of this.floating) this.breakHold(n, this.songTime ?? 0);
+    this.floating = [];
     await this.audio.resume();
     this.anchorPerf = null;
     this.state = 'playing';
@@ -333,17 +385,41 @@ export class Game {
     this.beam[lane] = 1;
     if (this.settings.hitsound > 0) this.audio.playTap();
     const t = this.songAt(perf);
+    if (this.slideShift(lane, t)) return;
     const list = this.laneNotes[lane];
     for (let i = this.laneHead[lane]; i < list.length; i++) {
       const n = list[i];
       if (n.state !== 0) continue;
       const diff = t - n.t; // + late, - early
-      if (diff < -WINDOWS.bad) return;              // too early: ignore the press
-      if (diff > WINDOWS.good) { this.miss(n); continue; }
-      if (diff < -WINDOWS.good) { this.miss(n, true); return; } // early "bad"
-      this.hit(n, diff);
+      const k = n.sweep != null ? SWEEP_LENIENCY : 1;
+      if (diff < -WINDOWS.bad * k) return;              // too early: ignore the press
+      if (diff > WINDOWS.good * k) { this.miss(n); continue; }
+      if (diff < -WINDOWS.good * k) { this.miss(n, true); return; } // early "bad"
+      this.hit(n, diff, k);
       return;
     }
+  }
+
+  // a key pressed near a holding slide's next bend, in the lane it bends into, takes the slide over
+  slideShift(lane, t) {
+    for (const n of [...this.holding, ...this.floating]) {
+      if (!n?.path || n.seg >= n.path.length) continue;
+      const p = n.path[n.seg];
+      if (p.lane !== lane || (this.holding[lane] && this.holding[lane] !== n)) continue;
+      const diff = t - p.t;
+      if (diff < -(WINDOWS.good + 60) || diff > WINDOWS.good) continue;
+      if (this.holding[n.cur] === n) this.holding[n.cur] = null;
+      this.floating = this.floating.filter(x => x !== n);
+      const tier = TIERS.find(tr => Math.abs(diff) <= tr.win * 1.3) || TIERS[2];
+      this.award(tier, lane);
+      this.lastJudge = { tier, time: performance.now(), diff: null, lane };
+      this.effects.push({ type: 'shift', from: n.cur, to: lane, time: performance.now(), color: tier.color });
+      this.burst(lane, tier, true);
+      n.cur = lane; n.seg++;
+      this.holding[lane] = n;
+      return true;
+    }
+    return false;
   }
 
   release(lane, perf) {
@@ -353,13 +429,20 @@ export class Game {
     if (!n) return;
     this.holding[lane] = null;
     const t = this.songAt(perf);
+    if (n.path && n.seg < n.path.length) {
+      // let go just before a bend (finger sliding over, or keys swapped in the wrong order): keep it alive
+      const p = n.path[n.seg];
+      if (t >= p.t - 260) { n.floatUntil = p.t + WINDOWS.good; this.floating.push(n); }
+      else this.breakHold(n, t);
+      return;
+    }
     if (t >= n.end - WINDOWS.good) this.finishHold(n);
     else this.breakHold(n, t);
   }
 
   // ---------- judging ----------
-  hit(n, diff) {
-    const ad = Math.abs(diff);
+  hit(n, diff, k = 1) {
+    const ad = Math.abs(diff) / k;
     const tier = TIERS.find(tr => ad <= tr.win) || TIERS[2];
     this.award(tier, n.lane);
     this.offsets.push(diff);
@@ -371,6 +454,26 @@ export class Game {
     this.burst(n.lane, tier);
     if (n.end) { n.state = 1; this.holding[n.lane] = n; }
     else n.state = 2;
+    if (n.sweep != null) {
+      const sw = this.sweeps.get(n.sweep);
+      if (!sw.missed && sw.notes.every(x => x.state === 2)) this.sweepDone(sw);
+    }
+  }
+
+  // every step of a sweep hit: a streak of light runs along the judge line and all strings ring
+  sweepDone(sw) {
+    const now = performance.now();
+    const a = sw.notes[0].lane, b = sw.notes[sw.notes.length - 1].lane;
+    this.effects.push({ type: 'sweep', from: a, to: b, time: now });
+    this.strumAt = now;
+    const n = sw.notes.length * 6;
+    for (let i = 0; i < n; i++) {
+      const u = i / (n - 1), lane = Math.round(a + (b - a) * u);
+      const x = this.laneX(a) + (this.laneX(b) - this.laneX(a)) * u;
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.2;
+      const v = 0.25 + Math.random() * 0.45;
+      this.particles.push({ x, y: this.judgeY, vx: Math.cos(ang) * v + Math.sign(b - a) * 0.15, vy: Math.sin(ang) * v, life: 1, decay: 0.002 + Math.random() * 0.0015, size: 1.6 + Math.random() * 1.4, lane, spark: true, white: i % 2 === 0 });
+    }
   }
 
   award(tier, lane) {
@@ -388,6 +491,8 @@ export class Game {
     n.state = 3;
     this.registerMiss(n.lane);
     if (n.end) { n.tail = 2; this.registerMiss(n.lane); }
+    if (n.path) for (; n.seg < n.path.length; n.seg++) this.registerMiss(n.lane);
+    if (n.sweep != null) this.sweeps.get(n.sweep).missed = true;
     if (early) this.lastJudge = { tier: MISS, time: performance.now(), diff: -999, lane: n.lane };
   }
 
@@ -410,6 +515,7 @@ export class Game {
   // released early: past the halfway point is a GOOD tail (combo kept), before it a miss
   breakHold(n, t) {
     n.state = 2; n.tail = 2;
+    if (n.path) for (; n.seg < n.path.length; n.seg++) this.registerMiss(n.cur);   // bends never reached
     if (t >= n.t + (n.end - n.t) / 2) {
       this.award(TIERS[2], n.lane);
       this.lastJudge = { tier: TIERS[2], time: performance.now(), diff: null, lane: n.lane };
@@ -489,10 +595,22 @@ export class Game {
       for (let i = h; i < list.length; i++) {
         const n = list[i];
         if (n.t - t > WINDOWS.good) break;
-        if (n.state === 0 && t - n.t > WINDOWS.good) this.miss(n);
+        if (n.state === 0 && t - n.t > WINDOWS.good * (n.sweep != null ? SWEEP_LENIENCY : 1)) this.miss(n);
       }
       const hn = this.holding[l];
+      // a slide whose bend went by without the next key taking over
+      if (hn?.path && hn.seg < hn.path.length && t > hn.path[hn.seg].t + WINDOWS.good) { this.holding[l] = null; this.breakHold(hn, t); continue; }
       if (hn && t >= hn.end) { this.holding[l] = null; this.finishHold(hn); }
+    }
+    for (let i = this.floating.length - 1; i >= 0; i--) {
+      const n = this.floating[i];
+      if (t > n.floatUntil) { this.floating.splice(i, 1); this.breakHold(n, t); }
+    }
+    // passing a scroll-speed change: flash the neck and ring the strings
+    while (this.markIdx < this.speedMarks.length && this.speedMarks[this.markIdx].t <= t) {
+      const m = this.speedMarks[this.markIdx++];
+      this.effects.push({ type: 'speed', time: now, x: m.x, up: m.up });
+      if (m.up) this.strumAt = now;
     }
 
     this.char.onHp(this.hp, now);
@@ -618,6 +736,68 @@ export class Game {
           const y0 = Math.max(hy, y - band), y1 = Math.min(H, y + band * 0.3);
           if (this.persp) { this.neckPath(y0, y1); g.fill(); } else g.fillRect(fx, y0, fw, y1 - y0);
         }
+      } else if (e.type === 'shift') {
+        // slide taken over: a bright arc hops from the old lane to the new one
+        const dur = 380;
+        if (age > dur) { this.effects.splice(i, 1); continue; }
+        const p = age / dur, u = 1 - Math.pow(1 - Math.min(1, age / 160), 3);
+        const x0 = this.laneX(e.from), x2 = this.laneX(e.to), x1 = (x0 + x2) / 2, y1 = jy - lw * 0.7;
+        g.lineCap = 'round';
+        g.beginPath(); g.moveTo(x0, jy); g.quadraticCurveTo(x1, y1, x2, jy);
+        g.globalAlpha = (1 - p) * 0.45; g.strokeStyle = LANE_COLORS[e.to]; g.lineWidth = 12 * (1 - p) + 2; g.stroke();
+        g.globalAlpha = 1 - p; g.strokeStyle = '#fff'; g.lineWidth = 2.5; g.stroke();
+        const bx = (1 - u) * (1 - u) * x0 + 2 * (1 - u) * u * x1 + u * u * x2, by = (1 - u) * (1 - u) * jy + 2 * (1 - u) * u * y1 + u * u * jy;
+        g.fillStyle = '#fff'; g.beginPath(); g.arc(bx, by, 5 * (1 - p) + 2, 0, Math.PI * 2); g.fill();
+        g.globalAlpha = 1;
+      } else if (e.type === 'sweep') {
+        // the whole sweep hit: a blade of light along the judge line, then SWEEP! stamped above
+        const dur = 760;
+        if (age > dur) { this.effects.splice(i, 1); continue; }
+        const p = age / dur, dir = Math.sign(e.to - e.from) || 1;
+        const x0 = this.laneX(e.from) - dir * lw * 0.5, x1 = this.laneX(e.to) + dir * lw * 0.5;
+        const xh = x0 + (x1 - x0) * (1 - Math.pow(1 - Math.min(1, age / 170), 2));
+        const gr = g.createLinearGradient(x0, 0, xh + dir, 0);
+        gr.addColorStop(0, 'rgba(255,190,90,0)'); gr.addColorStop(1, `rgba(255,248,215,${1 - p})`);
+        g.fillStyle = gr;
+        const xa = Math.min(x0, xh), xw = Math.abs(xh - x0);
+        g.fillRect(xa, jy - 4 * (1 - p) - 1, xw, 8 * (1 - p) + 2);
+        g.globalAlpha = (1 - p) * 0.35; g.fillRect(xa, jy - 22, xw, 44); g.globalAlpha = 1;
+        g.globalCompositeOperation = 'source-over';
+        g.save();
+        g.globalAlpha = p < 0.7 ? 1 : (1 - p) / 0.3;
+        g.translate(this.centerX, jy - this.noteH * (this.arcs ? 6.6 : 7.2));
+        g.transform(1, 0, -0.2, 1, 0, 0);
+        const sc = age < 90 ? 1.7 - 0.7 * age / 90 : 1 + 0.04 * Math.sin(age / 40);
+        g.scale(sc, sc);
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = `italic 900 26px ${FONT}`;
+        g.fillStyle = 'rgba(60,20,0,0.75)'; g.fillText('SWEEP!', 3, 3);
+        const tg = g.createLinearGradient(-60, 0, 60, 0);
+        tg.addColorStop(0, '#ffe27a'); tg.addColorStop(0.5, '#fff'); tg.addColorStop(1, '#ffb04a');
+        g.fillStyle = tg; g.fillText('SWEEP!', 0, 0);
+        g.restore();
+        g.globalCompositeOperation = 'lighter';
+      } else if (e.type === 'speed') {
+        // the neck flashes in the new speed's colour and the change is announced
+        const dur = 700;
+        if (age > dur) { this.effects.splice(i, 1); continue; }
+        const p = age / dur, col = e.up ? '255,110,70' : '80,200,255';
+        g.fillStyle = `rgba(${col},${0.22 * (1 - p)})`;
+        if (this.persp) { this.neckPath(this.horizonY, H); g.fill(); } else g.fillRect(fx, 0, fw, H);
+        g.globalCompositeOperation = 'source-over';
+        const label = Math.abs(e.x - 1) < 0.05 ? 'NORMAL' : e.x < 0.5 ? 'BRAKE' : e.up ? 'SPEED UP' : 'SLOW DOWN';
+        g.save();
+        g.globalAlpha = p < 0.6 ? 1 : (1 - p) / 0.4;
+        g.translate(this.centerX + (1 - Math.min(1, age / 120)) * (e.up ? -40 : 40), this.horizonY + (jy - this.horizonY) * 0.32);
+        g.transform(1, 0, -0.2, 1, 0, 0);
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.font = `italic 900 24px ${FONT}`;
+        g.fillStyle = 'rgba(11,7,22,0.7)'; g.fillText(label, 3, 3);
+        g.fillStyle = `rgb(${col})`; g.fillText(label, 0, 0);
+        g.font = `italic 900 13px ${FONT}`;
+        g.fillStyle = '#fff'; g.fillText(`×${e.x.toFixed(1)}`, 0, 20);
+        g.restore();
+        g.globalCompositeOperation = 'lighter';
       } else if (e.type === 'break') {
         if (age > 400) { this.effects.splice(i, 1); continue; }
         g.globalCompositeOperation = 'source-over';
@@ -756,7 +936,8 @@ export class Game {
     }
 
     // beat / bar lines: fret bars sliding down the neck
-    const zOf = time => (time - t) / this.approach;
+    const st = this.scrollPos(t);
+    const zOf = time => (this.scrollPos(time) - st) / this.approach;
     if (this.beats.length) {
       let k = Math.max(0, upper(this.beats, t - 200) - 1);
       for (; k < this.beats.length; k++) {
@@ -788,6 +969,7 @@ export class Game {
     }
 
     // key beams between the strings
+    this.drawSpeedFx(g, t, now, zOf);
     for (let l = 0; l < 4; l++) {
       if (!this.keyDown[l]) this.beam[l] = Math.max(0, this.beam[l] - dt / 140);
       const b = this.keyDown[l] ? 1 : this.beam[l];
@@ -960,6 +1142,7 @@ export class Game {
     const span = 0.84;                       // note width as a share of the space between strings
     const yz = z => this.yOfS(this.sOfZ(z));
     const zMin = -0.12;                      // just past the judge line
+    this.drawSweeps(g, t, now, zOf, yz);
     for (let l = 0; l < 4; l++) {
       const list = this.laneNotes[l];
       for (let i = Math.max(0, this.laneHead[l] - 2); i < list.length; i++) {
@@ -967,7 +1150,10 @@ export class Game {
         const z = zOf(n.t);
         if (z > 1.05) break;
         if (n.state === 2 && !n.end) continue;
-        if (n.end) {
+        if (n.path) {
+          this.drawSlide(g, n, t, now, dt, zOf, yz, zMin);
+          if (n.state !== 0 && n.state !== 3) continue;
+        } else if (n.end) {
           const holdingNow = n.state === 1;
           if (n.state === 2 && n.tail === 1) continue;
           const zh = holdingNow ? 0 : Math.max(zMin, z);
@@ -1024,6 +1210,210 @@ export class Game {
         g.globalAlpha = 1;
       }
     }
+  }
+
+  // ---------- gimmick notes ----------
+  // slide: a ribbon that bends into the next lane just before each bend point, with an arrow-marked
+  // head where the next key takes over. While held its core flows toward the player, and the lane it
+  // bends into lights up with arrows on the judge line shortly before the bend.
+  drawSlide(g, n, t, now, dt, zOf, yz, zMin) {
+    if (n.state === 2 && n.tail === 1) return;
+    const holdingNow = n.state === 1;
+    const dead = n.state === 3 || n.tail === 2;
+    const D = 110, jy = this.judgeY;
+    const keys = [[n.t, n.lane]];
+    let ln = n.lane;
+    for (const p of n.path) { keys.push([p.t - D, ln], [p.t, p.lane]); ln = p.lane; }
+    keys.push([n.end, ln]);
+    const laneAt = time => {
+      for (let i = 1; i < keys.length; i++) {
+        if (time > keys[i][0]) continue;
+        const [t0, l0] = keys[i - 1], [t1, l1] = keys[i];
+        return l0 + (l1 - l0) * Math.max(0, Math.min(1, (time - t0) / Math.max(1, t1 - t0)));
+      }
+      return ln;
+    };
+    const t0 = holdingNow ? Math.max(n.t, t) : n.t;
+    const ts = [t0];
+    for (const [kt] of keys) if (kt > t0 && kt < n.end) ts.push(kt);
+    for (let x = t0 + 24; x < n.end; x += 24) ts.push(x);
+    ts.push(n.end);
+    ts.sort((a, b) => a - b);
+    const L = [], R = [], C = [];
+    for (const time of ts) {
+      let z = zOf(time);
+      if (z > 1.05) break;
+      z = Math.max(holdingNow ? 0 : zMin, z);
+      const y = yz(z), s = this.sOfY(y), lp = laneAt(time);
+      const cx = this.bx(lp + 0.5, y), hw = this.laneW * 0.3 * s;
+      L.push([cx - hw, y]); R.push([cx + hw, y]); C.push([cx, y]);
+    }
+    if (C.length < 2) return;
+    const poly = pts => { g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); };
+    g.beginPath(); poly(L);
+    for (let i = R.length - 1; i >= 0; i--) g.lineTo(R[i][0], R[i][1]);
+    g.closePath();
+    const yTop = C[C.length - 1][1], yBot = C[0][1];
+    const body = g.createLinearGradient(0, yTop, 0, Math.max(yTop + 1, yBot));
+    if (dead) { body.addColorStop(0, 'rgba(120,120,140,0.1)'); body.addColorStop(1, 'rgba(120,120,140,0.28)'); }
+    else {
+      body.addColorStop(0, 'rgba(122,60,255,0.2)');
+      body.addColorStop(0.6, `rgba(170,110,255,${holdingNow ? 0.5 : 0.38})`);
+      body.addColorStop(1, rgba(n.cur, holdingNow ? 0.8 : 0.55));
+    }
+    g.fillStyle = body; g.fill();
+    if (!dead) {
+      g.strokeStyle = 'rgba(225,205,255,0.85)'; g.lineWidth = 1.4;
+      g.beginPath(); poly(L); g.stroke();
+      g.beginPath(); poly(R); g.stroke();
+      g.save();
+      g.globalCompositeOperation = 'lighter';
+      g.lineCap = 'round'; g.lineJoin = 'round';
+      if (holdingNow) {
+        g.setLineDash([10, 12]); g.lineDashOffset = now * 0.3;
+        g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 3;
+      } else { g.strokeStyle = 'rgba(255,255,255,0.4)'; g.lineWidth = 1.6; }
+      g.beginPath(); poly(C); g.stroke();
+      g.restore();
+    }
+    // bend heads: the target lane's note with a double chevron pointing where the slide goes
+    let prev = n.lane;
+    for (let k = 0; k < n.path.length; k++) {
+      const p = n.path[k], from = prev;
+      prev = p.lane;
+      if (k < n.seg || dead) continue;
+      const z = zOf(p.t);
+      if (z > 1.05 || z < zMin) continue;
+      const s = this.sOfZ(z), y = this.yOfS(s), x = this.bx(p.lane + 0.5, y);
+      const sp = this.sprites[p.lane], kx = this.laneW * 0.84 / (this.laneW - 10);
+      const w = sp.w * s * kx * 0.8, h = sp.h * s * 0.8;
+      g.drawImage(sp.canvas, x - w / 2, y - h / 2, w, h);
+      this.chevrons(g, x, y, Math.sign(p.lane - from), 7 * s + 2, '#fff');
+    }
+    if (holdingNow) {
+      const lx = C[0][0];
+      if (Math.random() < dt / 25) this.particles.push({ x: lx + (Math.random() - 0.5) * this.laneW * 0.4, y: jy, vx: (Math.random() - 0.5) * 0.1, vy: -0.25 - Math.random() * 0.3, life: 0.8, decay: 0.003, size: 1.5 + Math.random() * 2, lane: n.cur });
+      this.strings[n.cur] = Math.max(this.strings[n.cur], 0.35); this.strings[n.cur + 1] = Math.max(this.strings[n.cur + 1], 0.35);
+      // the next bend is coming: light the cell it bends into and point at it
+      const p = n.path[n.seg];
+      if (p && p.t - t < 480 && p.t - t > -WINDOWS.good) {
+        const blink = 0.5 + 0.5 * Math.sin(now / 45);
+        const cellH = this.noteH * 1.9;
+        this.neckPath(jy - cellH / 2 + 2, jy + cellH / 2 - 2, p.lane + 0.06, p.lane + 0.94);
+        g.fillStyle = rgba(p.lane, 0.25 + 0.35 * blink); g.fill();
+        const dir = Math.sign(p.lane - n.cur);
+        for (let i = 0; i < 3; i++) {
+          const u = ((now / 260) + i / 3) % 1;
+          const xx = this.laneX(n.cur) + (this.laneX(p.lane) - this.laneX(n.cur)) * u;
+          g.globalAlpha = Math.sin(Math.PI * u);
+          this.chevrons(g, xx, jy, dir, 8, LANE_COLORS[p.lane]);
+        }
+        g.globalAlpha = 1;
+      }
+    }
+  }
+
+  chevrons(g, x, y, dir, r, color) {
+    if (!dir) return;
+    g.strokeStyle = color; g.lineWidth = Math.max(1.5, r * 0.32); g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const off of [-0.45, 0.45]) {
+      const cx = x + off * r * dir;
+      g.beginPath(); g.moveTo(cx - r * 0.4 * dir, y - r * 0.6); g.lineTo(cx + r * 0.4 * dir, y); g.lineTo(cx - r * 0.4 * dir, y + r * 0.6); g.stroke();
+    }
+  }
+
+  // sweep: a golden lightning ribbon joining the steps that are still to come, from the last one hit
+  drawSweeps(g, t, now, zOf, yz) {
+    if (!this.sweeps.size) return;
+    const jy = this.judgeY;
+    g.save();
+    g.globalCompositeOperation = 'lighter';
+    g.lineCap = 'round'; g.lineJoin = 'round';
+    for (const sw of this.sweeps.values()) {
+      const ns = sw.notes;
+      if (zOf(ns[0].t) > 1.05 || ns.every(x => x.state >= 2)) continue;
+      const pts = ns.filter(x => x.state === 0).map(x => {
+        const y = yz(Math.max(-0.1, zOf(x.t)));
+        return [this.bx(x.lane + 0.5, y), y, this.sOfY(y)];
+      });
+      const lastHit = [...ns].reverse().find(x => x.state === 2);
+      if (lastHit && pts.length) pts.unshift([this.bx(lastHit.lane + 0.5, jy), jy, 1]);
+      if (pts.length < 2) continue;
+      const s = pts.reduce((a, p) => a + p[2], 0) / pts.length;
+      const fade = Math.min(1, (1.05 - zOf(ns[0].t)) * 5);
+      const path = () => {
+        g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+        // a little zigzag between steps: lightning, not a ruler line
+        for (let i = 1; i < pts.length; i++) {
+          const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
+          const j = Math.sin(now / 40 + i * 2.1) * 4 * s;
+          g.lineTo((x0 + x1) / 2 + j, (y0 + y1) / 2 - j * 0.5);
+          g.lineTo(x1, y1);
+        }
+      };
+      path();
+      g.globalAlpha = fade * (sw.missed ? 0.25 : 0.4 + 0.2 * Math.sin(now / 70));
+      g.strokeStyle = sw.missed ? '#8888aa' : '#ffb84a'; g.lineWidth = 12 * s;
+      g.stroke();
+      g.globalAlpha = fade * (sw.missed ? 0.4 : 0.95);
+      g.strokeStyle = sw.missed ? '#aaaacc' : '#fff3c8'; g.lineWidth = 2.6 * s + 0.6;
+      g.stroke();
+      // a gold diamond halo behind every step to come
+      if (!sw.missed) for (const [x, y, ps] of pts.slice(lastHit ? 1 : 0)) {
+        const d = this.laneW * 0.36 * ps;
+        g.globalAlpha = fade * 0.9;
+        g.strokeStyle = '#ffd36a'; g.lineWidth = 2 * ps + 0.5;
+        g.beginPath(); g.moveTo(x, y - d * 0.6); g.lineTo(x + d, y); g.lineTo(x, y + d * 0.6); g.lineTo(x - d, y); g.closePath(); g.stroke();
+      }
+    }
+    g.restore();
+  }
+
+  // scroll-speed changes: a coloured gate on the neck with the new speed written beside it, streaks of
+  // wind while fast, a cool tint while slow
+  drawSpeedFx(g, t, now, zOf) {
+    if (!this.scroll) return;
+    const jy = this.judgeY, hy = this.horizonY;
+    const yz = z => this.yOfS(this.sOfZ(z));
+    g.save();
+    for (const m of this.speedMarks) {
+      const z = zOf(m.t);
+      if (z < 0) continue;
+      if (z > 1.02) break;
+      const y = yz(z), s = this.sOfY(y);
+      const col = m.up ? '255,110,70' : '80,200,255';
+      const fade = Math.min(1, (1 - z) * 4);
+      const x0 = this.bx(0, y), x1 = this.bx(4, y);
+      g.globalCompositeOperation = 'lighter';
+      g.fillStyle = `rgba(${col},${0.3 * fade})`; g.fillRect(x0, y - 6 * s, x1 - x0, 12 * s);
+      g.globalCompositeOperation = 'source-over';
+      g.fillStyle = `rgba(${col},${0.9 * fade})`; g.fillRect(x0, y - 1.5 * s, x1 - x0, 3 * s);
+      g.font = `italic 900 ${Math.round(9 + 7 * s)}px ${FONT}`;
+      g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillStyle = `rgba(${col},${fade})`;
+      g.fillText(`${m.up ? '▲' : '▼'} ×${m.x.toFixed(1)}`, x1 + 6 * s, y);
+    }
+    const x = this.speedAt(t);
+    if (x > 1.12) {
+      const a = Math.min(1, (x - 1) / 0.5);
+      g.globalCompositeOperation = 'lighter';
+      for (let i = 0; i < 16; i++) {
+        const b = 0.15 + ((i * 0.618) % 1) * 3.7;
+        const u = (now * x / 650 + i * 0.137) % 1;
+        const z0 = 1 - u, z1 = Math.max(-0.1, z0 - 0.2);
+        const y0 = yz(z0), y1 = yz(z1);
+        const gr = g.createLinearGradient(0, y0, 0, y1);
+        gr.addColorStop(0, 'rgba(255,200,170,0)'); gr.addColorStop(1, `rgba(255,225,205,${0.5 * a})`);
+        g.strokeStyle = gr; g.lineWidth = 1 + 1.6 * this.sOfY(y1);
+        g.beginPath(); g.moveTo(this.bx(b, y0), y0); g.lineTo(this.bx(b, y1), y1); g.stroke();
+      }
+    } else if (x < 0.88) {
+      const a = Math.min(1, (1 - x) / 0.5);
+      g.globalCompositeOperation = 'lighter';
+      this.neckPath(hy, jy, 0, 4, g);
+      g.fillStyle = `rgba(60,140,255,${a * (0.09 + 0.04 * Math.sin(now / 320))})`; g.fill();
+    }
+    g.restore();
   }
 
   // state of the in-play effects, eased every frame. fx.mv: 孤夜's dance on stage; chorus: inside a
@@ -1131,7 +1521,8 @@ export class Game {
     }
 
     const pxPerMs = (jy + 30) / this.approach;
-    const yOf = time => jy - (time - t) * pxPerMs;
+    const st = this.scrollPos(t);
+    const yOf = time => jy - (this.scrollPos(time) - st) * pxPerMs;
 
     // beat / bar lines
     if (this.beats.length) {
@@ -1160,13 +1551,12 @@ export class Game {
 
     // notes
     const nw = lw - 10, nh = this.noteH;
-    const horizonT = t + this.approach + 200;
     for (let l = 0; l < 4; l++) {
       const list = this.laneNotes[l];
       const x = this.laneX(l);
       for (let i = Math.max(0, this.laneHead[l] - 2); i < list.length; i++) {
         const n = list[i];
-        if (n.t > horizonT) break;
+        if (yOf(n.t) < -60) break;
         if (n.state === 2 && !n.end) continue;
         if (n.end) {
           const holdingNow = n.state === 1;
@@ -1491,6 +1881,20 @@ export class Game {
 
     // progress
     const prog = Math.max(0, Math.min(1, t / this.endMs));
+    // current scroll speed while it is off x1.0
+    if (this.scroll) {
+      const sx = this.speedAt(t);
+      if (Math.abs(sx - 1) > 0.04) {
+        g.save();
+        g.textAlign = 'center'; g.textBaseline = 'middle';
+        g.translate(cx, Math.max(14, this.horizonY - 12));
+        g.transform(1, 0, -0.18, 1, 0, 0);
+        g.font = `italic 900 14px ${FONT}`;
+        g.fillStyle = sx > 1 ? '#ff8a5a' : '#6fd0ff';
+        g.fillText(`${sx > 1 ? '▲' : '▼'} SPEED ×${sx.toFixed(2)}`, 0, 0);
+        g.restore();
+      }
+    }
     g.fillStyle = 'rgba(255,255,255,0.06)'; g.fillRect(0, H - 3, W, 3);
     const pg = g.createLinearGradient(0, 0, W, 0);
     pg.addColorStop(0, '#ff6fd8'); pg.addColorStop(1, '#6a5cff');
@@ -1599,5 +2003,11 @@ function findChorus(buffer, beats, downbeat, barBeats) {
 function upper(arr, x) {
   let lo = 0, hi = arr.length;
   while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m] <= x) lo = m + 1; else hi = m; }
+  return lo;
+}
+
+function upperT(arr, x) {
+  let lo = 0, hi = arr.length;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].t <= x) lo = m + 1; else hi = m; }
   return lo;
 }

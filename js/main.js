@@ -20,7 +20,7 @@ const game = new Game(canvas, audio, { onEnd: showResults });
 
 // ---------- settings ----------
 const DEFAULTS = {
-  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true, character: true, cutin: true, noteStyle: 'bachi',
+  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true, character: true, cutin: true, noteStyle: 'bachi', gimmicks: true,
   keys: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'], keyLabels: ['D', 'F', 'J', 'K'],
 };
 let settings = { ...DEFAULTS, ...safeJSON(localStorage.getItem('rhythmSettings'), {}) };
@@ -382,7 +382,7 @@ async function startSong(song, diff) {
   const charReady = game.char.prepare(song.title, song.id);
   try {
     const entry = await prepare(song);
-    const { notes } = generateChart(entry.analysis, diff);
+    const { notes, speed } = generateChart(entry.analysis, diff, 1, { gimmicks: settings.gimmicks !== false });
     if (!notes.length) throw new Error('No playable notes found');
     let music;
     if (entry.buffer) music = { type: 'audio', buffer: entry.buffer };
@@ -397,7 +397,7 @@ async function startSong(song, diff) {
     show('play');
     game.resize();
     game.start({
-      notes, music, title: song.title, songId: song.id, difficulty: diff,
+      notes, speed, music, title: song.title, songId: song.id, difficulty: diff,
       beats: entry.analysis.beats, downbeat: entry.analysis.downbeat, barBeats: entry.analysis.barBeats,
       settings,
     });
@@ -641,6 +641,9 @@ document.querySelectorAll('#setFx button').forEach(b => b.addEventListener('clic
 document.querySelectorAll('#setNote button').forEach(b => b.addEventListener('click', () => {
   settings.noteStyle = b.dataset.v; saveSettings(); syncSettingsUI();
 }));
+document.querySelectorAll('#setGimmick button').forEach(b => b.addEventListener('click', () => {
+  settings.gimmicks = b.dataset.v === 'on'; saveSettings(); syncSettingsUI();
+}));
 $('setHit').addEventListener('change', () => { unlockAudio(); audio.playTap(); });
 
 function syncSettingsUI() {
@@ -653,6 +656,7 @@ function syncSettingsUI() {
   $('setChar').checked = settings.character;
   document.querySelectorAll('#setFx button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'full') === settings.cutin)));
   document.querySelectorAll('#setNote button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === settings.noteStyle)));
+  document.querySelectorAll('#setGimmick button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'on') === (settings.gimmicks !== false))));
   $('setAutoSubmit').checked = settings.autoSubmit;
   $('setName').value = playerName();
   renderKeys();

@@ -84,7 +84,9 @@ function midiCandidates(an) {
 }
 
 // ============================================================
-export function generateChart(an, difficulty, seed = 1) {
+// opts.gimmicks: add sweeps (Normal+), slides and scroll-speed changes (Hard+) on top of the plain chart.
+// The plain chart is the same either way: the gimmicks only re-lane notes, bend holds and add a speed track.
+export function generateChart(an, difficulty, seed = 1, opts = {}) {
   const cfg = CONFIG[difficulty] || CONFIG.normal;
   const rand = mulberry32(seed * 7919 + DIFFICULTIES.indexOf(difficulty) + 1);
   const cands = an.kind === 'midi' ? midiCandidates(an) : audioCandidates(an);
@@ -165,6 +167,7 @@ export function generateChart(an, difficulty, seed = 1) {
   const hand = l => (l < 2 ? 0 : 1);
 
   const notes = [];
+  const noteC = new Map();   // note -> pitch / brightness of its onset (for sweep and slide directions)
   const busyUntil = [-1, -1, -1, -1];
   const lastAt = [-9, -9, -9, -9];
   let prevLane = -1, prevT = -9, prevC = null, lastChord = -9;
@@ -221,6 +224,7 @@ export function generateChart(an, difficulty, seed = 1) {
       }
     }
     notes.push(note);
+    noteC.set(note, c.c);
     lastAt[lane] = Math.max(lastAt[lane], note.end || t);
 
     // chords on the strongest accents
@@ -241,7 +245,164 @@ export function generateChart(an, difficulty, seed = 1) {
   }
 
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
-  return { notes, stats: chartStats(notes, an.duration) };
+  let speed = null;
+  if (opts.gimmicks) {
+    const di = DIFFICULTIES.indexOf(difficulty);
+    const rand2 = mulberry32(seed * 104729 + di * 13 + 5);
+    if (di >= 1) addSweeps(notes, noteC, beatLen, cfg, di, rand2);
+    if (di >= 2) addSlides(notes, noteC, cands, beatLen, di, rand2);
+    if (di >= 2) speed = speedTrack(an, di, beatLen);
+    notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
+  }
+  return { notes, speed, stats: chartStats(notes, an.duration) };
+}
+
+// ---- sweeps: 3-4 evenly spaced single notes (8ths or faster) re-laned as a staircase, in the
+// direction the melody / brightness moves. Each note keeps its time; they share a sweep id.
+function addSweeps(notes, noteC, beatLen, cfg, di, rand) {
+  // Normal: quarter-note staircases are fine too
+  const maxGap = di >= 2 ? Math.min(0.26, beatLen * 0.55) : Math.min(0.5, beatLen * 1.05), minGap = di >= 3 ? 0.06 : 0.12;
+  const len = di >= 2 ? 4 : 3;
+  const single = i => notes[i] && !notes[i].end && notes[i - 1]?.time !== notes[i].time && notes[i + 1]?.time !== notes[i].time;
+  const holdOver = (lane, t) => notes.some(n => n.end && n.lane === lane && n.time < t + 0.05 && n.end > t - 0.05);
+  const spacing = beatLen * (di >= 2 ? 8 : 16);
+  let id = 0, lastEnd = -1e9;
+  for (let i = 0; i + len <= notes.length; i++) {
+    if (notes[i].time - lastEnd < spacing) continue;
+    let ok = true;
+    const g0 = notes[i + 1].time - notes[i].time;
+    if (g0 < minGap || g0 > maxGap) continue;
+    for (let k = 0; k < len && ok; k++) {
+      if (!single(i + k)) ok = false;
+      else if (k > 0) {
+        const g = notes[i + k].time - notes[i + k - 1].time;
+        if (Math.abs(g - g0) > g0 * 0.35) ok = false;
+      }
+    }
+    if (!ok || rand() > (di >= 3 ? 0.8 : 0.6)) continue;
+    const run = notes.slice(i, i + len);
+    const dc = (noteC.get(run[len - 1]) ?? 0) - (noteC.get(run[0]) ?? 0);
+    const dir = Math.abs(dc) > 1e-6 ? Math.sign(dc) : (rand() < 0.5 ? 1 : -1);
+    const start = len === 4 ? (dir > 0 ? 0 : 3) : (dir > 0 ? Math.floor(rand() * 2) : 3 - Math.floor(rand() * 2));
+    const lanes = run.map((_, k) => start + dir * k);
+    if (run.some((n, k) => holdOver(lanes[k], n.time))) continue;
+    // no fast jack into the first step or out of the last one
+    const prev = notes.slice(0, i).reverse().find(n => n.lane === lanes[0]);
+    const next = notes.slice(i + len).find(n => n.lane === lanes[len - 1]);
+    if (prev && run[0].time - (prev.end || prev.time) < cfg.jack * 0.6) continue;
+    if (next && next.time - run[len - 1].time < cfg.jack * 0.6) continue;
+    run.forEach((n, k) => { n.lane = lanes[k]; n.sweep = id; });
+    id++;
+    lastEnd = run[len - 1].time;
+    i += len - 1;
+  }
+}
+
+// ---- slides: long holds bend into the neighbouring lane on a beat (one bend, two on long holds),
+// toward where the melody goes while the note is held. The lane they move into must be free.
+function addSlides(notes, noteC, cands, beatLen, di, rand) {
+  const rate = di >= 3 ? 0.6 : 0.4, D = 0.12;
+  // lane l free from a to b? Single taps in the way move to another lane at the same time if one is
+  // open (not the slide's own lane, nothing within 0.1 s, no hold over it, no note at the same time)
+  const clear = (l, own, a, b, self) => {
+    const hit = notes.filter(n => n !== self && n.lane === l && (n.end ? n.time < b && n.end > a : n.time > a && n.time < b));
+    if (hit.some(n => n.end || n.sweep != null || n.path)) return false;
+    const moves = [];
+    for (const n of hit) {
+      const alt = [0, 1, 2, 3].filter(x => x !== l && x !== own).sort((x, y) => Math.abs(x - l) - Math.abs(y - l))
+        .find(x => !notes.some(m => m !== n && m.lane === x && (m.end ? m.time < n.time + 0.1 && m.end > n.time - 0.1 : Math.abs(m.time - n.time) < 0.1)) &&
+          !moves.some(([m2, x2]) => x2 === x && Math.abs(m2.time - n.time) < 0.1));
+      if (alt == null) return false;
+      moves.push([n, alt]);
+    }
+    for (const [n, x] of moves) n.lane = x;
+    return true;
+  };
+  for (const h of notes) {
+    if (!h.end || h.sweep != null) continue;
+    const dur = h.end - h.time;
+    if (dur < beatLen * 1.25 || rand() > rate) continue;
+    const slots = [];
+    for (let k = 1; h.time + k * beatLen / 2 < h.end - beatLen * 0.45; k++) slots.push(h.time + k * beatLen / 2);
+    if (!slots.length) continue;
+    const times = dur >= beatLen * 3 && slots.length >= 2
+      ? [slots[Math.floor(slots.length / 3)], slots[Math.floor(slots.length * 2 / 3)]]
+      : [slots[Math.floor((slots.length - 1) / 2)]];
+    if (times.length === 2 && times[0] === times[1]) times.pop();
+    const c0 = noteC.get(h) ?? 0;
+    const after = cands.filter(c => c.t > times[0] - 0.05 && c.t < h.end);
+    const cAfter = after.length ? after.reduce((s, c) => s + c.c, 0) / after.length : c0;
+    let dir = Math.abs(cAfter - c0) > 1e-6 ? Math.sign(cAfter - c0) : (h.lane < 2 ? 1 : -1);
+    const zig = times.length === 2 && rand() < 0.4;
+    const path = [];
+    let cur = h.lane;
+    for (let k = 0; k < times.length; k++) {
+      if (k === 1 && zig) dir = -dir;
+      // the lane must stay free to the hold's end: a later bend may still be rejected
+      const free = l => l >= 0 && l <= 3 && clear(l, cur, times[k] - D - 0.25, h.end + 0.12, h);
+      let nl = cur + dir;
+      if (!free(nl)) { dir = -dir; nl = cur + dir; }
+      if (!free(nl)) break;
+      path.push({ time: +times[k].toFixed(4), lane: nl });
+      cur = nl;
+    }
+    if (path.length) h.path = path;
+  }
+}
+
+// ---- scroll speed: per-bar loudness (onset strength) splits the song into quiet / normal / loud
+// sections of 4+ bars. Quiet ones scroll at x0.6, loud ones at x1.3 (Hard) or x1.5 (Expert); on Expert a
+// loud section that follows a quieter one is preceded by a one-beat brake. Points are linearly
+// interpolated (two points close together make a step). Returns [{ time, x }] or null.
+function speedTrack(an, di, beatLen) {
+  const beats = an.beats || [], bb = an.barBeats || 4;
+  if (beats.length < bb * 16) return null;
+  const bars = [];
+  for (let k = ((an.downbeat || 0) % bb + bb) % bb; k + bb < beats.length; k += bb) bars.push([beats[k], beats[k + bb]]);
+  const ot = an.onsets.t, os = an.onsets.s;
+  const e = bars.map(([a, b]) => {
+    let s = 0;
+    for (let j = lowerBound(ot, a); j < ot.length && ot[j] < b; j++) s += os[j];
+    return s;
+  });
+  const sm = e.map((_, i) => (e[Math.max(0, i - 1)] + e[i] * 2 + e[Math.min(e.length - 1, i + 1)]) / 4);
+  const med = quantile([...sm].sort((a, b) => a - b), 0.5);
+  if (!(med > 0)) return null;
+  const cls = sm.map(v => (v < med * 0.55 ? -1 : v > med * 1.3 ? 1 : 0));
+  // runs; shorter than 4 bars count as normal
+  const runs = [];
+  for (let i = 0; i < cls.length;) {
+    let j = i; while (j < cls.length && cls[j] === cls[i]) j++;
+    runs.push({ a: i, b: j, v: j - i >= 4 ? cls[i] : 0 });
+    i = j;
+  }
+  const fast = di >= 3 ? 1.5 : 1.3, slow = 0.6;
+  const pts = [{ time: 0, x: 1 }];
+  const push = (time, x) => {
+    const last = pts[pts.length - 1];
+    if (time <= last.time) time = last.time + 0.001;
+    pts.push({ time: +time.toFixed(4), x });
+  };
+  let cur = 1, prevV = 0;
+  for (let ri = 0; ri < runs.length; ri++) {
+    const r = runs[ri];
+    if (r.v === 0) { prevV = 0; continue; }
+    const ts = bars[r.a][0], te = bars[r.b - 1][1];
+    const nextLoud = runs[ri + 1]?.v > 0;
+    const lastT = () => pts[pts.length - 1].time;
+    if (r.v < 0) {
+      push(ts, cur); push(ts + beatLen, slow);
+      if (nextLoud) push(te - 0.02, slow);   // the loud section starts straight from here
+      else { push(te - beatLen, slow); push(te, 1); }
+    } else {
+      if (prevV < 0) push(ts, fast);
+      else if (di >= 3 && ts - beatLen * 1.5 > lastT()) { push(ts - beatLen * 1.5, cur); push(ts - beatLen, 0.4); push(ts - 0.02, 0.4); push(ts, fast); }
+      else { push(Math.max(lastT(), ts - beatLen), cur); push(ts, fast); }
+      push(te - beatLen * 0.5, fast); push(te, 1);
+    }
+    cur = 1; prevV = r.v;
+  }
+  return pts.length > 1 ? pts : null;
 }
 
 // ---- difficulty rating (roughly 1-20) ----
