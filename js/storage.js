@@ -5,16 +5,20 @@ let dbPromise = null;
 function db() {
   if (!dbPromise) {
     dbPromise = new Promise((res, rej) => {
+      // some iOS in-app browsers never answer indexedDB.open; give up after 2s instead of hanging the song list
+      const timer = setTimeout(() => rej(new Error('IndexedDB timeout')), 2000);
       const req = indexedDB.open(DB_NAME, 1);
+      req.onblocked = () => rej(new Error('IndexedDB blocked'));
       req.onupgradeneeded = () => {
         const d = req.result;
         if (!d.objectStoreNames.contains('songs')) d.createObjectStore('songs', { keyPath: 'id' });
         if (!d.objectStoreNames.contains('cache')) d.createObjectStore('cache');
       };
-      req.onsuccess = () => res(req.result);
-      req.onerror = () => rej(req.error);
+      req.onsuccess = () => { clearTimeout(timer); res(req.result); };
+      req.onerror = () => { clearTimeout(timer); rej(req.error); };
     });
   }
+  dbPromise.catch(() => { dbPromise = null; });
   return dbPromise;
 }
 

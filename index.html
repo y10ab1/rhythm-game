@@ -3,45 +3,65 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-<meta name="theme-color" content="#06050d">
-<title>Rhythm Master</title>
+<meta name="theme-color" content="#0b0716">
+<title>Rhythm Master feat. 孤夜</title>
 <link rel="icon" href="data:,">
+<link rel="preload" as="image" href="assets/guye/invite.webp">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 <div id="app">
   <canvas id="gameCanvas"></canvas>
-  <button id="pauseBtn" class="hidden" aria-label="Pause">❚❚</button>
+  <button id="pauseBtn" class="hidden" aria-label="Pause"><i></i><i></i></button>
 
   <!-- Title -->
   <section id="titleScreen" class="screen show">
-    <div class="logo">RHYTHM</div>
-    <div class="subtitle">MASTER · 4K</div>
-    <button class="btn primary" data-go="select">Play</button>
-    <button class="btn" data-go="settings">Settings</button>
-    <button class="btn" id="btnTitleLeaderboard">Leaderboard</button>
-    <div class="keys" id="titleKeys"></div>
-    <div class="hint">鍵盤 D F J K（可在設定中修改）· 手機直接點擊軌道<br>第一次玩建議先到 Settings → Calibrate 校正延遲</div>
+    <div class="scene-bg"></div>
+    <img class="char-art" src="assets/guye/invite.webp" alt="">
+    <div class="title-main">
+      <div class="logo">
+        <span class="logo-a">RHYTHM</span>
+        <span class="logo-b">MASTER</span>
+        <span class="logo-feat">feat. 孤夜</span>
+      </div>
+      <nav class="menu">
+        <button class="btn primary big" data-go="select">PLAY</button>
+        <button class="btn" data-go="settings">SETTINGS</button>
+        <button class="btn" id="btnTitleLeaderboard">RANKING</button>
+      </nav>
+      <div class="keys" id="titleKeys"></div>
+    </div>
   </section>
 
   <!-- Song select -->
   <section id="selectScreen" class="screen">
-    <div class="topbar">
+    <div class="scene-bg"></div>
+    <header class="topbar">
       <button class="icon-btn" data-go="title" aria-label="Back">‹</button>
-      <div class="topbar-title">SELECT SONG</div>
+      <div class="topbar-title">SELECT</div>
       <button class="icon-btn" data-go="settings" aria-label="Settings">⚙</button>
-    </div>
-    <div class="song-list" id="songList"></div>
-    <div class="select-panel">
-      <div class="diff-tabs" id="diffTabs"></div>
-      <div class="select-info" id="selectInfo"></div>
-      <button class="btn primary wide" id="btnStart">Start</button>
+    </header>
+    <div class="select-layout">
+      <div class="select-panel">
+        <div class="jacket" id="jacket">
+          <div class="jacket-genre" id="jacketGenre"></div>
+          <div class="jacket-bpm"><b id="jacketBpm"></b><span>BPM</span></div>
+          <div class="jacket-time" id="jacketTime"></div>
+        </div>
+        <div class="sel-title" id="selTitle"></div>
+        <div class="diff-tabs" id="diffTabs"></div>
+        <div class="select-info" id="selectInfo"></div>
+        <button class="btn primary big wide" id="btnStart">START</button>
+      </div>
+      <div class="song-list" id="songList"></div>
     </div>
     <input type="file" id="fileInput" accept="audio/*,.mp3,.wav,.ogg,.m4a,.aac,.flac,.opus,.webm,.mid,.midi" multiple hidden>
   </section>
 
   <!-- Loading / analysis -->
   <section id="loadingScreen" class="screen">
+    <div class="scene-bg"></div>
+    <div class="loading-robots"><i class="robot black"></i><i class="robot white"></i></div>
     <div class="loading-title" id="loadingTitle">Loading…</div>
     <div class="progress"><div id="loadingBar"></div></div>
     <div class="hint" id="loadingHint"></div>
@@ -49,20 +69,24 @@
 
   <!-- Settings -->
   <section id="settingsScreen" class="screen">
-    <div class="topbar">
+    <div class="scene-bg"></div>
+    <header class="topbar">
       <button class="icon-btn" id="btnSettingsBack" aria-label="Back">‹</button>
       <div class="topbar-title">SETTINGS</div>
       <span class="icon-btn ghost"></span>
-    </div>
-    <div class="settings">
+    </header>
+    <div class="settings panel">
       <label class="row"><span>Scroll speed</span><input type="range" id="setSpeed" min="1" max="10" step="0.5"><output id="outSpeed"></output></label>
       <label class="row"><span>Audio offset</span><input type="range" id="setOffset" min="-200" max="200" step="1"><output id="outOffset"></output></label>
-      <div class="row sub"><span></span><button class="btn small" id="btnCalibrate">Calibrate 校正</button><span class="note">正值 = 你的設備聲音較晚到</span></div>
-      <label class="row"><span>Music volume</span><input type="range" id="setMusic" min="0" max="100"><output id="outMusic"></output></label>
+      <div class="row sub"><span></span><button class="btn small" id="btnCalibrate">Calibrate 校正</button><span></span></div>
+      <label class="row"><span>Music</span><input type="range" id="setMusic" min="0" max="100"><output id="outMusic"></output></label>
       <label class="row"><span>Hit sound</span><input type="range" id="setHit" min="0" max="100"><output id="outHit"></output></label>
-      <label class="row"><span>Show FAST/SLOW</span><input type="checkbox" id="setTiming"></label>
+      <label class="row"><span>FAST / SLOW</span><input type="checkbox" id="setTiming"></label>
       <label class="row"><span>No fail</span><input type="checkbox" id="setNoFail"></label>
-      <div class="row keys-row name-setting"><span>Player name</span><input type="text" id="setName" maxlength="20" autocomplete="off" spellcheck="false"><button class="btn small" id="btnSetNameDice" title="Random name">🎲</button></div>
+      <label class="row"><span>孤夜</span><input type="checkbox" id="setChar"></label>
+      <div class="row"><span>演出</span><div class="seg" id="setFx"><button data-v="full">標準</button><button data-v="lite">輕量</button></div><span></span></div>
+      <div class="row"><span>音符</span><div class="seg" id="setNote"><button data-v="bachi">撥子</button><button data-v="slab">厚板</button><button data-v="sakura">櫻花</button><button data-v="glass">玻璃</button></div><span></span></div>
+      <div class="row keys-row name-setting"><span>Name</span><input type="text" id="setName" maxlength="20" autocomplete="off" spellcheck="false"><button class="btn small" id="btnSetNameDice" title="Random name">🎲</button></div>
       <label class="row"><span>Auto-submit</span><input type="checkbox" id="setAutoSubmit"></label>
       <div class="row keys-row"><span>Keys</span><button class="btn small" id="btnRebind">Change</button><span class="keys inline" id="settingsKeys"></span></div>
     </div>
@@ -70,13 +94,14 @@
 
   <!-- Calibration -->
   <section id="calibrateScreen" class="screen">
-    <div class="topbar">
+    <div class="scene-bg"></div>
+    <header class="topbar">
       <button class="icon-btn" id="btnCalBack" aria-label="Back">‹</button>
       <div class="topbar-title">CALIBRATION</div>
       <span class="icon-btn ghost"></span>
-    </div>
+    </header>
     <div class="cal-ring" id="calRing"><span id="calCount"></span></div>
-    <div class="cal-text" id="calText">跟著節拍聲，在每一拍按任意軌道鍵（或點擊畫面）。<br>前 4 拍為預備拍。</div>
+    <div class="cal-text" id="calText">跟著節拍，每一拍按一下</div>
     <div class="cal-result" id="calResult"></div>
     <button class="btn primary" id="btnCalStart">Start</button>
     <button class="btn hidden" id="btnCalApply">Apply</button>
@@ -84,57 +109,71 @@
 
   <!-- Pause -->
   <section id="pauseScreen" class="screen dim">
-    <div class="screen-title">PAUSED</div>
-    <button class="btn primary" id="btnResume">Resume</button>
-    <button class="btn" id="btnPauseRetry">Retry</button>
-    <button class="btn" id="btnQuit">Quit</button>
+    <div class="pause-title">PAUSE</div>
+    <button class="btn primary" id="btnResume">RESUME</button>
+    <button class="btn" id="btnPauseRetry">RETRY</button>
+    <button class="btn" id="btnQuit">QUIT</button>
   </section>
 
   <!-- Results -->
   <section id="resultsScreen" class="screen">
-    <div class="res-song" id="resSong"></div>
-    <div class="res-rank" id="resRank">S</div>
-    <div class="res-score" id="resScore">0</div>
-    <div class="res-acc" id="resAcc"></div>
-    <div class="res-grid">
-      <div><b class="c-perfect" id="resPerfect">0</b><span>Perfect</span></div>
-      <div><b class="c-great" id="resGreat">0</b><span>Great</span></div>
-      <div><b class="c-good" id="resGood">0</b><span>Good</span></div>
-      <div><b class="c-miss" id="resMiss">0</b><span>Miss</span></div>
-      <div><b id="resCombo">0</b><span>Max combo</span></div>
-      <div><b id="resFastSlow">0 / 0</b><span>Fast / Slow</span></div>
-    </div>
-    <div class="res-offset" id="resOffset"></div>
-    <div class="name-row">
-      <input type="text" id="playerName" placeholder="Your name" maxlength="20" autocomplete="off" spellcheck="false">
-      <button class="btn small" id="btnNameDice" title="Random name">🎲</button>
-      <button class="btn small" id="btnSubmit">Submit</button>
-    </div>
-    <div class="submit-status" id="submitStatus"></div>
-    <div class="btn-row">
-      <button class="btn primary" id="btnRetry">Retry</button>
-      <button class="btn" id="btnResLeaderboard">Ranking</button>
-      <button class="btn" id="btnResBack">Songs</button>
+    <div class="scene-bg"></div>
+    <img class="char-art" id="resArt" alt="">
+    <div class="res-line" id="resLine"></div>
+    <div class="res-card panel">
+      <div class="res-head"><span class="res-song" id="resSong"></span><span class="diff-badge" id="resDiff"></span></div>
+      <div class="res-main">
+        <div class="res-rank" id="resRank">S</div>
+        <div class="res-scorebox">
+          <div class="res-score" id="resScore">0</div>
+          <div class="res-accrow"><div class="acc-bar"><i id="resAccBar"></i></div><span id="resAcc"></span></div>
+          <div class="res-badge" id="resBadge"></div>
+        </div>
+      </div>
+      <div class="res-bars">
+        <div class="jrow perfect"><span>PERFECT</span><div class="jbar"><i id="barPerfect"></i></div><b id="resPerfect">0</b></div>
+        <div class="jrow great"><span>GREAT</span><div class="jbar"><i id="barGreat"></i></div><b id="resGreat">0</b></div>
+        <div class="jrow good"><span>GOOD</span><div class="jbar"><i id="barGood"></i></div><b id="resGood">0</b></div>
+        <div class="jrow miss"><span>MISS</span><div class="jbar"><i id="barMiss"></i></div><b id="resMiss">0</b></div>
+      </div>
+      <div class="res-mini">
+        <div><b id="resCombo">0</b><span>MAX COMBO</span></div>
+        <div><b id="resFastSlow">0 / 0</b><span>FAST / SLOW</span></div>
+      </div>
+      <div class="res-offset" id="resOffset"></div>
+      <div class="name-row">
+        <input type="text" id="playerName" placeholder="Name" maxlength="20" autocomplete="off" spellcheck="false">
+        <button class="btn small" id="btnNameDice" title="Random name">🎲</button>
+        <button class="btn small" id="btnSubmit">Submit</button>
+      </div>
+      <div class="submit-status" id="submitStatus"></div>
+      <div class="btn-row">
+        <button class="btn primary" id="btnRetry">RETRY</button>
+        <button class="btn" id="btnResLeaderboard">RANKING</button>
+        <button class="btn" id="btnResBack">SONGS</button>
+      </div>
     </div>
   </section>
 
   <!-- Leaderboard -->
   <section id="leaderboardScreen" class="screen">
-    <div class="topbar">
+    <div class="scene-bg"></div>
+    <header class="topbar">
       <button class="icon-btn" id="btnLbBack" aria-label="Back">‹</button>
-      <div class="topbar-title">LEADERBOARD</div>
+      <div class="topbar-title">RANKING</div>
       <span class="icon-btn ghost"></span>
-    </div>
+    </header>
     <div class="lb-tabs">
       <button class="lb-tab" data-tab="song">This song</button>
       <button class="lb-tab" data-tab="global">Global</button>
     </div>
-    <div class="lb-wrap">
+    <div class="lb-wrap panel">
       <div class="lb-msg" id="lbMsg">Loading…</div>
       <table class="lb-table" id="lbTable"><thead></thead><tbody id="lbBody"></tbody></table>
     </div>
   </section>
 
+  <div id="wipe"><i></i><i></i><i></i></div>
   <div id="dropHint">放開以加入歌曲 · Drop to add song</div>
   <div id="toast"></div>
 </div>

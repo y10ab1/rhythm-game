@@ -14,6 +14,7 @@ A browser-based 4-key rhythm game. Play the built-in songs (generated with Googl
 - **Latency calibration** — tap-along calibration screen, plus a per-play suggestion based on your median hit offset.
 - **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
 - **Leaderboard** — global and per-song leaderboards powered by Cloudflare Workers + D1.
+- **孤夜 + 黑白無常** — the on-stage character and her two robots (black and white). Every built-in song has its own 3D music video (3 clips + a FEVER clip) that plays behind the lanes once you hold a 30 combo; uploaded songs get a mix of all of them.
 
 ## Controls
 
@@ -39,8 +40,10 @@ js/analyzer.js        beat / onset detection (pure JS, runs in a Worker and in N
 js/chart.js           chart generation per difficulty
 js/midi.js            MIDI parser
 js/storage.js         IndexedDB for uploaded songs + analysis cache
+js/character.js       孤夜, her robots, per-song MV player, FEVER cut-in
 songs/                built-in songs + manifest.json
-tools/                Lyria generation, manifest build, analyzer tests
+assets/guye/          character art, robot sprite sheets; mv/ = per-song MV clips + manifest.json
+tools/                Lyria + MV generation, manifest build, analyzer tests
 ```
 
 ## Tools
@@ -48,6 +51,11 @@ tools/                Lyria generation, manifest build, analyzer tests
 ```bash
 # generate the built-in songs with Lyria 3.5 (needs GEMINI_API_KEY)
 python3 tools/generate_lyria.py
+
+# generate the per-song MVs with Gemini image + Omni video (needs GEMINI_API_KEY and ffmpeg):
+# keyframes -> review tools/mv_work/kf/ (delete bad ones and rerun) -> clips -> encode -> track -> manifest
+python3 tools/generate_mv.py keyframes
+python3 tools/generate_mv.py all            # or: all <song_id ...>
 
 # rebuild songs/manifest.json (BPM, length, levels) — needs ffmpeg
 node tools/build_manifest.mjs
@@ -83,4 +91,4 @@ Set `API_BASE` in `js/main.js` to the Worker URL.
 
 ## License
 
-MIT. Built-in tracks were generated with Google Lyria.
+MIT. Built-in tracks were generated with Google Lyria; the MV clips with Gemini image models and Gemini Omni.

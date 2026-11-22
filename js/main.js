@@ -3,6 +3,7 @@
 // ============================================================
 import { AudioEngine } from './audio.js';
 import { Game, LANE_COLORS } from './game.js';
+import { resultArt } from './character.js';
 import { generateChart, DIFFICULTIES } from './chart.js';
 import { analyzeAudio, ANALYZER_VERSION, ANALYSIS_SR } from './analyzer.js';
 import { parseMidi, midiToSong } from './midi.js';
@@ -19,7 +20,7 @@ const game = new Game(canvas, audio, { onEnd: showResults });
 
 // ---------- settings ----------
 const DEFAULTS = {
-  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true,
+  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true, character: true, cutin: true, noteStyle: 'bachi',
   keys: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'], keyLabels: ['D', 'F', 'J', 'K'],
 };
 let settings = { ...DEFAULTS, ...safeJSON(localStorage.getItem('rhythmSettings'), {}) };
@@ -40,11 +41,26 @@ function unlockAudio() {
 // ---------- screens ----------
 let screen = 'title';
 let settingsReturn = 'title';
+// big scene changes get a slanted-band wipe; the swap happens while the bands cover the screen
+const WIPE = new Set(['title>select', 'select>loading', 'loading>play', 'play>results', 'results>loading', 'results>select', 'pause>select']);
+let wipeTimer = 0;
 function show(name) {
-  screen = name;
-  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('show', s.id === name + 'Screen'));
-  $('pauseBtn').classList.toggle('hidden', name !== 'play');
-  if (name !== 'play') startMenuBg();
+  const from = screen;
+  const apply = () => {
+    screen = name;
+    document.querySelectorAll('.screen').forEach(s => s.classList.toggle('show', s.id === name + 'Screen'));
+    $('pauseBtn').classList.toggle('hidden', name !== 'play');
+    if (name !== 'play') startMenuBg();
+  };
+  const w = $('wipe');
+  if (name !== from && WIPE.has(`${from}>${name}`) && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    w.classList.remove('go'); void w.offsetWidth; w.classList.add('go');
+    clearTimeout(wipeTimer);
+    screen = name;
+    // play must switch immediately (the game clock is already running); others swap mid-wipe
+    if (name === 'play') apply(); else wipeTimer = setTimeout(apply, 260);
+    setTimeout(() => w.classList.remove('go'), 760);
+  } else apply();
 }
 document.querySelectorAll('[data-go]').forEach(b => b.addEventListener('click', () => {
   unlockAudio();
@@ -79,6 +95,7 @@ async function loadLibrary() {
     const res = await fetch('songs/manifest.json');
     builtin = (await res.json()).map(s => ({ ...s, builtin: true }));
   } catch { builtin = []; }
+  renderSongList();                       // built-in songs show right away
   uploads = await storage.listSongs();
   renderSongList();
 }
@@ -103,9 +120,10 @@ function renderSongList() {
     b.style.setProperty('--c', song.color || '#ff6fd8');
     b.tabIndex = 0;
     const best = bests[`${song.id}|${difficulty}`];
-    const sub = [song.artist, song.genre, song.bpm ? `${song.bpm} BPM` : '', fmtTime(song.duration)].filter(Boolean).join(' · ');
-    b.innerHTML = `<div class="stripe"></div><div class="meta"><div class="title"></div><div class="sub"></div></div>` +
+    const sub = [song.artist, song.genre].filter(Boolean).join(' · ');
+    b.innerHTML = `<div class="lv"></div><div class="meta"><div class="title"></div><div class="sub"></div></div>` +
       `<div class="best"></div>` + (song.builtin ? '' : `<button class="del" title="Delete">✕</button>`);
+    b.querySelector('.lv').textContent = song.levels?.[difficulty]?.level ?? '–';
     b.querySelector('.title').textContent = song.title;
     b.querySelector('.sub').textContent = sub;
     if (best) { b.querySelector('.best').textContent = best.rank; b.querySelector('.best').style.color = best.color; }
@@ -118,12 +136,13 @@ function renderSongList() {
     list.appendChild(b);
   };
 
-  section('BUILT-IN  ·  Lyria 3.5 & MIDI');
+  section('SONGS');
   builtin.forEach(card);
-  section('MY SONGS  ·  上傳的歌曲');
+  section('MY SONGS');
   const up = document.createElement('button');
   up.className = 'upload-card';
-  up.innerHTML = '＋ 上傳歌曲 Upload song<small>MP3 · WAV · OGG · M4A · FLAC · MIDI — 也可以直接拖放檔案到這裡</small>';
+  up.title = 'MP3 · WAV · OGG · M4A · FLAC · MIDI（可拖放）';
+  up.textContent = '＋ UPLOAD';
   up.addEventListener('click', () => { unlockAudio(); $('fileInput').click(); });
   list.appendChild(up);
   uploads.forEach(card);
@@ -148,7 +167,7 @@ function renderPanel() {
     b.className = 'diff-tab' + (d === difficulty ? ' active' : '');
     b.style.setProperty('--dc', DIFF_COLORS[d]);
     const lv = song?.levels?.[d]?.level;
-    b.innerHTML = `<b>${lv ?? '–'}</b>${d}`;
+    b.innerHTML = `<b><span>${lv ?? '–'}</span></b>${d}`;
     b.addEventListener('click', () => {
       difficulty = d;
       localStorage.setItem('rhythmDifficulty', d);
@@ -157,14 +176,30 @@ function renderPanel() {
     tabs.appendChild(b);
   }
   const info = $('selectInfo');
-  if (!song) { info.textContent = '上傳一首歌開始玩'; $('btnStart').disabled = true; return; }
+  const jacket = $('jacket');
+  if (!song) {
+    info.textContent = '＋ UPLOAD'; $('btnStart').disabled = true;
+    $('selTitle').textContent = ''; $('jacketGenre').textContent = ''; $('jacketBpm').textContent = '–'; $('jacketTime').textContent = '';
+    return;
+  }
   $('btnStart').disabled = false;
-  const lv = song.levels?.[difficulty];
+  if (jacket.dataset.id !== song.id) {
+    jacket.dataset.id = song.id;
+    jacket.style.setProperty('--c', song.color || '#ff3d8b');
+    jacket.classList.remove('swap'); void jacket.offsetWidth; jacket.classList.add('swap');
+  }
+  $('jacketGenre').textContent = song.genre || song.artist || '';
+  $('jacketBpm').textContent = song.bpm || '–';
+  $('jacketTime').textContent = song.duration ? fmtTime(song.duration) : '';
+  $('selTitle').textContent = song.title;
   const best = bests[`${song.id}|${difficulty}`];
-  info.textContent = [
-    lv ? `${lv.notes} notes` : '',
-    best ? `Best ${best.score.toLocaleString()} · ${best.rank} · ${(best.acc * 100).toFixed(2)}%` : 'No play yet',
-  ].filter(Boolean).join('   ·   ');
+  info.innerHTML = '';
+  if (best) {
+    const rk = document.createElement('span'); rk.className = 'rk'; rk.textContent = best.rank; rk.style.color = best.color;
+    const sc = document.createElement('span'); sc.className = 'sc'; sc.textContent = best.score.toLocaleString();
+    const ac = document.createElement('span'); ac.textContent = `${(best.acc * 100).toFixed(2)}%`;
+    info.append(rk, sc, ac);
+  } else info.textContent = 'NEW';
 }
 
 function levelsFor(analysis) {
@@ -341,6 +376,10 @@ async function startSelected() {
 
 async function startSong(song, diff) {
   show('loading');
+  // in parallel with the audio: decode 孤夜's art and fetch this song's MV clips, so nothing loads mid-song
+  game.char.enabled = settings.character !== false;
+  game.char.cutinEnabled = settings.cutin !== false;
+  const charReady = game.char.prepare(song.title, song.id);
   try {
     const entry = await prepare(song);
     const { notes } = generateChart(entry.analysis, diff);
@@ -353,11 +392,12 @@ async function startSong(song, diff) {
     }
     playing = { song, difficulty: diff };
     applyVolumes();
+    await charReady;
     await audio.resume();
     show('play');
     game.resize();
     game.start({
-      notes, music, title: song.title, difficulty: diff,
+      notes, music, title: song.title, songId: song.id, difficulty: diff,
       beats: entry.analysis.beats, downbeat: entry.analysis.downbeat, barBeats: entry.analysis.barBeats,
       settings,
     });
@@ -394,30 +434,54 @@ let lastResult = null;
 function showResults(r) {
   const { song, difficulty: diff } = playing;
   show('results');
-  $('resSong').textContent = `${song.title} · ${diff.toUpperCase()}`;
-  $('resRank').textContent = r.rank;
-  $('resRank').style.color = r.color;
-  $('resScore').textContent = r.score.toLocaleString();
+  $('resSong').textContent = song.title;
+  $('resDiff').textContent = diff.toUpperCase();
+  $('resDiff').style.setProperty('--dc', DIFF_COLORS[diff]);
+  const rank = $('resRank');
+  rank.textContent = r.rank;
+  rank.style.color = r.color;
+  rank.classList.remove('stamp'); void rank.offsetWidth; rank.classList.add('stamp');
   $('resAcc').textContent = `${(r.accuracy * 100).toFixed(2)}%`;
-  $('resPerfect').textContent = r.counts.perfect;
-  $('resGreat').textContent = r.counts.great;
-  $('resGood').textContent = r.counts.good;
-  $('resMiss').textContent = r.counts.miss;
-  $('resCombo').textContent = r.maxCombo;
+  const total = Math.max(1, r.counts.perfect + r.counts.great + r.counts.good + r.counts.miss);
+  const bars = { perfect: 'barPerfect', great: 'barGreat', good: 'barGood', miss: 'barMiss' };
+  for (const k in bars) { $(bars[k]).style.width = '0'; }
+  $('resAccBar').style.width = '0';
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    for (const k in bars) $(bars[k]).style.width = `${(r.counts[k] / total) * 100}%`;
+    $('resAccBar').style.width = `${r.accuracy * 100}%`;
+  }));
+  countUp($('resScore'), r.score, 1100);
+  countUp($('resPerfect'), r.counts.perfect, 800);
+  countUp($('resGreat'), r.counts.great, 800);
+  countUp($('resGood'), r.counts.good, 800);
+  countUp($('resMiss'), r.counts.miss, 800);
+  countUp($('resCombo'), r.maxCombo, 900);
+  const badge = $('resBadge');
+  badge.className = 'res-badge' + (r.failed ? ' fail' : '');
+  badge.textContent = r.failed ? 'FAILED'
+    : r.counts.miss + r.counts.good + r.counts.great === 0 ? 'ALL PERFECT'
+    : r.counts.miss === 0 ? 'FULL COMBO' : '';
   $('resFastSlow').textContent = `${r.fast} / ${r.slow}`;
+  const art = resultArt(r.rank);
+  $('resArt').classList.toggle('hidden', !settings.character);
+  $('resLine').classList.toggle('hidden', !settings.character);
+  if (settings.character) {
+    $('resArt').src = art.src;
+    $('resArt').style.animation = 'none'; void $('resArt').offsetWidth; $('resArt').style.animation = '';
+    $('resLine').textContent = art.line;
+  }
 
+  // only speak up about timing when it is clearly off
   const off = $('resOffset');
   off.innerHTML = '';
   if (r.hits >= 20 && Math.abs(r.medianOffset) >= 8) {
     const m = Math.round(r.medianOffset);
-    off.textContent = `你的打擊平均${m > 0 ? '偏晚' : '偏早'} ${Math.abs(m)}ms`;
+    off.textContent = `${m > 0 ? 'LATE' : 'EARLY'} ${Math.abs(m)}ms`;
     const b = document.createElement('button');
     b.className = 'btn small';
-    b.textContent = `Offset ${settings.offset} → ${settings.offset + m}`;
-    b.onclick = () => { settings.offset += m; saveSettings(); b.disabled = true; b.textContent = 'Applied ✓'; };
+    b.textContent = `Offset → ${settings.offset + m}`;
+    b.onclick = () => { settings.offset += m; saveSettings(); b.disabled = true; b.textContent = '✓'; };
     off.appendChild(b);
-  } else if (r.hits >= 20) {
-    off.textContent = `平均誤差 ${Math.round(r.medianOffset)}ms — 時間校正良好 👍`;
   }
 
   const key = `${song.id}|${diff}`;
@@ -438,6 +502,16 @@ function showResults(r) {
   $('playerName').value = playerName();
   nameSubmitted = '';
   if (!r.failed && settings.autoSubmit) submitScore(true);
+}
+function countUp(el, to, ms, delay = 380) {
+  const t0 = performance.now() + delay;
+  el.textContent = '0';
+  const step = now => {
+    const k = Math.min(1, Math.max(0, (now - t0) / ms));
+    el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3))).toLocaleString();
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
 $('btnRetry').addEventListener('click', () => startSong(playing.song, playing.difficulty));
 $('btnResBack').addEventListener('click', () => { game.stop(); show('select'); renderSongList(); });
@@ -519,13 +593,13 @@ async function loadLeaderboard(tab) {
     const list = data.leaderboard || [];
     if (!list.length) { msg.textContent = 'No scores yet'; return; }
     table.querySelector('thead').innerHTML = tab === 'global'
-      ? '<tr><th>#</th><th>Player</th><th>Song</th><th>Score</th><th>Rank</th></tr>'
-      : '<tr><th>#</th><th>Player</th><th>Score</th><th>Acc</th><th>Rank</th></tr>';
+      ? '<tr><th class="c-no">#</th><th class="c-pl">Player</th><th class="c-sc">Score</th><th class="c-rk">Rank</th></tr>'
+      : '<tr><th class="c-no">#</th><th class="c-pl">Player</th><th class="c-sc">Score</th><th class="c-ac">Acc</th><th class="c-rk">Rank</th></tr>';
     list.forEach((e, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML = tab === 'global'
-        ? `<td>${i + 1}</td><td>${esc(e.player_name)}</td><td>${esc(e.song_name)}</td><td>${Number(e.score).toLocaleString()}</td><td>${esc(e.rank)}</td>`
-        : `<td>${i + 1}</td><td>${esc(e.player_name)}</td><td>${Number(e.score).toLocaleString()}</td><td>${typeof e.accuracy === 'number' ? e.accuracy.toFixed(1) + '%' : '-'}</td><td>${esc(e.rank)}</td>`;
+        ? `<td>${i + 1}</td><td><div class="nm">${esc(e.player_name)}</div><div class="sg">${esc(e.song_name)}</div></td><td>${Number(e.score).toLocaleString()}</td><td>${esc(e.rank)}</td>`
+        : `<td>${i + 1}</td><td><div class="nm">${esc(e.player_name)}</div></td><td>${Number(e.score).toLocaleString()}</td><td>${typeof e.accuracy === 'number' ? e.accuracy.toFixed(1) + '%' : '-'}</td><td>${esc(e.rank)}</td>`;
       body.appendChild(tr);
     });
     msg.style.display = 'none';
@@ -560,6 +634,13 @@ bindRange('setMusic', 'outMusic', 'music');
 bindRange('setHit', 'outHit', 'hitsound');
 $('setTiming').addEventListener('change', e => { settings.showTiming = e.target.checked; saveSettings(); });
 $('setNoFail').addEventListener('change', e => { settings.noFail = e.target.checked; saveSettings(); });
+$('setChar').addEventListener('change', e => { settings.character = e.target.checked; saveSettings(); });
+document.querySelectorAll('#setFx button').forEach(b => b.addEventListener('click', () => {
+  settings.cutin = b.dataset.v === 'full'; saveSettings(); syncSettingsUI();
+}));
+document.querySelectorAll('#setNote button').forEach(b => b.addEventListener('click', () => {
+  settings.noteStyle = b.dataset.v; saveSettings(); syncSettingsUI();
+}));
 $('setHit').addEventListener('change', () => { unlockAudio(); audio.playTap(); });
 
 function syncSettingsUI() {
@@ -569,6 +650,9 @@ function syncSettingsUI() {
   $('setHit').value = settings.hitsound; $('outHit').textContent = settings.hitsound;
   $('setTiming').checked = settings.showTiming;
   $('setNoFail').checked = settings.noFail;
+  $('setChar').checked = settings.character;
+  document.querySelectorAll('#setFx button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'full') === settings.cutin)));
+  document.querySelectorAll('#setNote button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === settings.noteStyle)));
   $('setAutoSubmit').checked = settings.autoSubmit;
   $('setName').value = playerName();
   renderKeys();
@@ -750,7 +834,7 @@ canvas.addEventListener('pointerdown', e => {
 });
 canvas.addEventListener('pointermove', e => {
   if (!pointers.has(e.pointerId) || game.state !== 'playing') return;
-  const lane = game.laneAt(e.clientX), old = pointers.get(e.pointerId);
+  const old = pointers.get(e.pointerId), lane = game.laneAfterMove(old, e.clientX);
   if (lane === old) return;
   pointers.set(e.pointerId, lane);
   pUp(old, e.timeStamp);
@@ -774,22 +858,66 @@ function startMenuBg() {
   bgRunning = true;
   requestAnimationFrame(menuBg);
 }
+const bgImg = new Image();
+bgImg.src = 'assets/guye/bg.jpg';
+const bgBlurImg = new Image();
+bgBlurImg.src = 'assets/guye/bg_blur.jpg';
+// one pre-rendered five-lobed plum petal sprite
+const petal = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 48;
+  const p = c.getContext('2d');
+  p.translate(24, 24);
+  const gr = p.createRadialGradient(0, 0, 2, 0, 0, 22);
+  gr.addColorStop(0, '#fff'); gr.addColorStop(0.5, '#ffb3d4'); gr.addColorStop(1, 'rgba(255,61,139,0)');
+  p.fillStyle = gr;
+  for (let i = 0; i < 5; i++) { p.beginPath(); p.ellipse(0, -10, 7, 11, 0, 0, Math.PI * 2); p.fill(); p.rotate(Math.PI * 2 / 5); }
+  return c;
+})();
+const PETALS = Array.from({ length: 26 }, (_, i) => ({
+  x: Math.random(), y: Math.random(), s: 0.35 + Math.random() * 0.7,
+  vx: 0.012 + Math.random() * 0.02, vy: 0.02 + Math.random() * 0.03, r: Math.random() * 6, vr: (Math.random() - 0.5) * 1.6, ph: i,
+}));
+let bgLast = 0;
 function menuBg(now) {
   if (game.state === 'playing' || game.state === 'paused') { bgRunning = false; return; }
+  const dt = Math.min(0.05, (now - (bgLast || now)) / 1000); bgLast = now;
   const g = game.ctx, { W, H, dpr } = game;
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.fillStyle = '#06050d';
+  g.fillStyle = '#0b0716';
   g.fillRect(0, 0, W, H);
-  g.fillStyle = 'rgba(255,255,255,0.025)';
-  g.fillRect(game.fieldX, 0, game.fieldW, H);
-  for (let i = 0; i < 14; i++) {
-    const lane = (i * 7) % 4;
-    const speed = 0.05 + (i % 5) * 0.012;
-    const y = ((now * speed / 1000 + i * 0.137) % 1.2 - 0.1) * H;
-    const s = game.sprites[lane];
-    g.globalAlpha = 0.12;
-    g.drawImage(s.canvas, game.laneX(lane) - s.w / 2, y - s.h / 2, s.w, s.h);
+  // slow Ken-Burns drift over the key art
+  const sharp = screen === 'title' || screen === 'results';
+  const img = sharp ? bgImg : bgBlurImg;
+  if (img.complete && img.naturalWidth) {
+    const t = now / 1000;
+    const sc = Math.max(W / img.naturalWidth, H / img.naturalHeight) * (1.08 + 0.03 * Math.sin(t * 0.07));
+    const iw = img.naturalWidth * sc, ih = img.naturalHeight * sc;
+    g.globalAlpha = sharp ? 0.55 : 0.7;
+    g.drawImage(img, (W - iw) / 2 + Math.sin(t * 0.05) * W * 0.02, (H - ih) / 2 + Math.cos(t * 0.04) * H * 0.015, iw, ih);
   }
+  // diagonal light streaks
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 4; i++) {
+    const k = ((now / 1000) * (0.05 + i * 0.013) + i * 0.27) % 1;
+    const x = -W * 0.3 + k * W * 1.6;
+    const gr = g.createLinearGradient(x - 80, 0, x + 80, 0);
+    const col = i % 2 ? '63,212,255' : '255,61,139';
+    gr.addColorStop(0, `rgba(${col},0)`); gr.addColorStop(0.5, `rgba(${col},0.10)`); gr.addColorStop(1, `rgba(${col},0)`);
+    g.globalAlpha = 1;
+    g.fillStyle = gr;
+    g.save(); g.translate(x, H / 2); g.transform(1, 0, -0.45, 1, 0, 0); g.fillRect(-80, -H, 160, H * 2); g.restore();
+  }
+  // drifting petals
+  for (const p of PETALS) {
+    p.x += p.vx * dt + Math.sin(now / 1300 + p.ph) * 0.0004; p.y += p.vy * dt; p.r += p.vr * dt;
+    if (p.y > 1.08) { p.y = -0.08; p.x = Math.random() * 0.9 - 0.1; }
+    if (p.x > 1.08) p.x = -0.08;
+    const sz = 30 * p.s;
+    g.globalAlpha = 0.25 + 0.35 * p.s;
+    g.save(); g.translate(p.x * W, p.y * H); g.rotate(p.r); g.scale(1, 0.6 + 0.4 * Math.sin(now / 700 + p.ph));
+    g.drawImage(petal, -sz / 2, -sz / 2, sz, sz); g.restore();
+  }
+  g.globalCompositeOperation = 'source-over';
   g.globalAlpha = 1;
   requestAnimationFrame(menuBg);
 }
