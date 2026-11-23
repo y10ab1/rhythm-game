@@ -1,0 +1,19 @@
+// guye.gamaniaocc.com: the game (static files from the repo) + 孤夜 art and MVs (R2).
+// Deployed by .github/workflows/site.yml on every push to master; by hand: cd site && npx wrangler@4 deploy
+// The art lives outside git (assets/, private sources in ~/coding/data/guyeh): upload changes with tools/sync_assets.py.
+{
+  "name": "guye-rhythm",
+  "account_id": "1cd18d19b4d47c1bbd01e7490c7e17f1",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "..",
+    "binding": "ASSETS",
+    "run_worker_first": ["/assets/*", "/robots.txt"],
+    "not_found_handling": "none"
+  },
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "guye-rhythm-assets" }],
+  "routes": [{ "pattern": "guye.gamaniaocc.com", "custom_domain": true }]
+}

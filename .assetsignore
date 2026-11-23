@@ -1,0 +1,14 @@
+# What site/ (wrangler, assets.directory "..") must NOT upload as static files: only index.html, css/, js/, songs/ go.
+.git
+.github
+.gitignore
+.assetsignore
+README.md
+fur_elise.mid
+site
+worker
+tools
+# 孤夜 art + MVs: served from R2 (tools/sync_assets.py), never as static files
+assets
+node_modules
+__pycache__

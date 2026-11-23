@@ -1,7 +1,10 @@
 tools/mv_work/
 tools/dance/node_modules/
 # 孤夜 art, reference images and MV/dance videos: private (the repo is public); they live in
-# ~/coding/data/guyeh and reach the live site through guye-rhythm-deploy
+# ~/coding/data/guyeh and reach the live site through R2 (tools/sync_assets.py)
 assets/
 tools/mv_refs/
 __pycache__/
+tools/.r2-sync.json
+site/.wrangler/
+node_modules/

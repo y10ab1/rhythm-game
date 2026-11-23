@@ -14,6 +14,9 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # the 孤夜 art and MVs are not in the repo: this copy loads them from guye.gamaniaocc.com (R2, CORS open)
+      - name: Point assets/guye/ at guye.gamaniaocc.com
+        run: sed -i 's#\(\.\./\)\?assets/guye/#https://guye.gamaniaocc.com/assets/guye/#g' index.html css/style.css js/character.js js/main.js
       - uses: actions/configure-pages@v4
       - uses: actions/upload-pages-artifact@v3
         with:

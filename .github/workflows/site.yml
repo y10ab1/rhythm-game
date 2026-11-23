@@ -1,0 +1,17 @@
+name: Deploy guye.gamaniaocc.com
+on:
+  push:
+    branches: [master]
+    paths: ['index.html', 'css/**', 'js/**', 'songs/**', 'site/**', '.assetsignore', '.github/workflows/site.yml']
+  workflow_dispatch:
+concurrency: site
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: site
+          wranglerVersion: '4'

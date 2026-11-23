@@ -2,7 +2,7 @@
 
 A browser-based 4-key rhythm game. Play the built-in songs (generated with Google **Lyria 3.5**), or upload your own audio / MIDI — beats and charts are detected automatically in the browser. No installation required.
 
-**Play now:** [https://y10ab1.github.io/rhythm-game/](https://y10ab1.github.io/rhythm-game/)
+**Play now:** [https://guye.gamaniaocc.com/](https://guye.gamaniaocc.com/) (also on [GitHub Pages](https://y10ab1.github.io/rhythm-game/))
 
 ## Features
 
@@ -71,13 +71,27 @@ node tools/chart_report.mjs
 
 ## Deployment
 
-### Frontend (GitHub Pages)
-
-Pushes to `master` auto-deploy via `.github/workflows/pages.yml`. It is a static site; to run locally serve the folder over HTTP (ES modules do not load from `file://`):
+The game is a static site; to run it locally serve the folder over HTTP (ES modules do not load from `file://`):
 
 ```bash
 python3 -m http.server 8000
 ```
+
+The 孤夜 art and MVs (`assets/`) are not in the repo (private sources, ~760 MB of video); they live in the
+R2 bucket `guye-rhythm-assets`, served at `https://guye.gamaniaocc.com/assets/...`.
+
+| Push to `master` | Deploys | How |
+|---|---|---|
+| any change | GitHub Pages | `.github/workflows/pages.yml`; `assets/guye/` paths are rewritten to load from guye.gamaniaocc.com |
+| `index.html`, `css/`, `js/`, `songs/`, `site/` | **guye.gamaniaocc.com** (Cloudflare Worker `guye-rhythm`, Workers Static Assets + R2) | `.github/workflows/site.yml` (repo secret `CLOUDFLARE_API_TOKEN`) |
+
+```bash
+python3 tools/sync_assets.py --dry-run   # which art / MV files changed
+python3 tools/sync_assets.py             # upload them to R2 (uses your wrangler login or CLOUDFLARE_API_TOKEN)
+cd site && npx wrangler@4 deploy         # deploy the site by hand
+```
+
+`.assetsignore` keeps everything but `index.html`, `css/`, `js/` and `songs/` out of the static upload.
 
 ### Leaderboard API (Cloudflare)
 
