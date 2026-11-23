@@ -8,6 +8,7 @@ import { generateChart, DIFFICULTIES } from './chart.js';
 import { analyzeAudio, ANALYZER_VERSION, ANALYSIS_SR } from './analyzer.js';
 import { parseMidi, midiToSong } from './midi.js';
 import { storage } from './storage.js';
+import { t, lang, setLang, applyI18n } from './i18n.js';
 
 const API_BASE = 'https://rhythm-game-api.yabipeng.workers.dev';
 const DIFF_COLORS = { easy: '#5dffa8', normal: '#5ab8ff', hard: '#ffcb47', expert: '#ff4d5e' };
@@ -122,7 +123,7 @@ function renderSongList() {
     const best = bests[`${song.id}|${difficulty}`];
     const sub = [song.artist, song.genre].filter(Boolean).join(' · ');
     b.innerHTML = `<div class="lv"></div><div class="meta"><div class="title"></div><div class="sub"></div></div>` +
-      `<div class="best"></div>` + (song.builtin ? '' : `<button class="del" title="Delete">✕</button>`);
+      `<div class="best"></div>` + (song.builtin ? '' : `<button class="del" title="${t('up.delete')}">✕</button>`);
     b.querySelector('.lv').textContent = song.levels?.[difficulty]?.level ?? '–';
     b.querySelector('.title').textContent = song.title;
     b.querySelector('.sub').textContent = sub;
@@ -141,7 +142,7 @@ function renderSongList() {
   section('MY SONGS');
   const up = document.createElement('button');
   up.className = 'upload-card';
-  up.title = 'MP3 · WAV · OGG · M4A · FLAC · MIDI（可拖放）';
+  up.title = t('up.title');
   up.textContent = '＋ UPLOAD';
   up.addEventListener('click', () => { unlockAudio(); $('fileInput').click(); });
   list.appendChild(up);
@@ -260,20 +261,20 @@ async function runAnalysis(buffer, onP) {
 async function prepare(song) {
   if (songCache.has(song.id)) return songCache.get(song.id);
   let entry;
-  setLoading(song.title, 0, 'Loading…');
+  setLoading(song.title, 0, t('load.loading'));
   if (song.kind === 'midi') {
     const data = song.builtin ? await fetchWithProgress('songs/' + song.file, p => setLoading(song.title, p)) : (await storage.getSong(song.id)).data;
     const s = midiToSong(parseMidi(data));
     entry = { analysis: s.analysis, midiNotes: s.notes };
   } else {
     const rec = song.builtin ? null : await storage.getSong(song.id);
-    const data = song.builtin ? await fetchWithProgress('songs/' + song.file, p => setLoading(song.title, p * 0.4, 'Downloading…')) : rec.data;
-    setLoading(song.title, 0.45, 'Decoding…');
+    const data = song.builtin ? await fetchWithProgress('songs/' + song.file, p => setLoading(song.title, p * 0.4, t('load.download'))) : rec.data;
+    setLoading(song.title, 0.45, t('load.decode'));
     const buffer = await audio.decode(data);
     const key = `analysis:${song.id}:${ANALYZER_VERSION}`;
     let analysis = song.builtin ? await storage.cacheGet(key) : (rec.analysis?.version === ANALYZER_VERSION ? rec.analysis : null);
     if (!analysis) {
-      analysis = await runAnalysis(buffer, p => setLoading(song.title, 0.5 + p * 0.5, '分析節拍中 Detecting beats…'));
+      analysis = await runAnalysis(buffer, p => setLoading(song.title, 0.5 + p * 0.5, t('load.beats')));
       if (song.builtin) storage.cachePut(key, analysis);
       else { rec.analysis = analysis; rec.levels = levelsFor(analysis); rec.bpm = Math.round(analysis.bpm); storage.putSong(rec); }
     }
@@ -293,11 +294,11 @@ async function addFiles(files) {
   for (const file of files) {
     const isMidi = /\.midi?$/i.test(file.name);
     const isAudio = !isMidi && (file.type.startsWith('audio/') || AUDIO_RE.test(file.name));
-    if (!isMidi && !isAudio) { toast(`不支援的檔案格式：${file.name}`); continue; }
-    if (file.size > 80 * 1024 * 1024) { toast(`檔案太大（>80MB）：${file.name}`); continue; }
+    if (!isMidi && !isAudio) { toast(t('err.format', { file: file.name })); continue; }
+    if (file.size > 80 * 1024 * 1024) { toast(t('err.big', { file: file.name })); continue; }
     const title = file.name.replace(/\.[^.]+$/, '').slice(0, 50);
     show('loading');
-    setLoading(title, 0, 'Reading file…');
+    setLoading(title, 0, t('load.read'));
     try {
       const data = await file.arrayBuffer();
       const id = 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -311,10 +312,10 @@ async function addFiles(files) {
         analysis = s.analysis;
         songCache.set(id, { analysis, midiNotes: s.notes });
       } else {
-        setLoading(title, 0.05, 'Decoding…');
+        setLoading(title, 0.05, t('load.decode'));
         const buffer = await audio.decode(data);
-        if (buffer.duration < 10) throw new Error('歌曲太短（至少 10 秒）');
-        analysis = await runAnalysis(buffer, p => setLoading(title, 0.1 + p * 0.9, '分析節拍中 Detecting beats…'));
+        if (buffer.duration < 10) throw new Error(t('err.short'));
+        analysis = await runAnalysis(buffer, p => setLoading(title, 0.1 + p * 0.9, t('load.beats')));
         songCache.set(id, { analysis, buffer });
         rec.analysis = analysis;
       }
@@ -322,16 +323,16 @@ async function addFiles(files) {
       rec.duration = analysis.duration;
       rec.levels = levelsFor(analysis);
       try { await storage.putSong(rec); }
-      catch { toast('瀏覽器儲存空間不足，這首歌只會保留到關閉頁面'); const { data: _, ...meta } = rec; uploads.unshift({ ...meta, temp: true }); }
+      catch { toast(t('err.storage')); const { data: _, ...meta } = rec; uploads.unshift({ ...meta, temp: true }); }
       lastId = id;
     } catch (err) {
       console.error(err);
-      toast(`無法讀取 ${file.name}：${err.message || err}`, 4000);
+      toast(t('err.read', { file: file.name, err: err.message || err }), 4000);
     }
   }
   const temps = uploads.filter(u => u.temp);
   uploads = [...temps, ...(await storage.listSongs())];
-  if (lastId) { selectedId = lastId; localStorage.setItem('rhythmSelected', lastId); toast('已加入歌曲！選擇難度後開始'); }
+  if (lastId) { selectedId = lastId; localStorage.setItem('rhythmSelected', lastId); toast(t('up.added')); }
   show('select');
   renderSongList();
 }
@@ -356,7 +357,7 @@ window.addEventListener('drop', e => {
 });
 
 async function deleteUpload(song) {
-  if (!confirm(`刪除「${song.title}」？`)) return;
+  if (!confirm(t('up.confirmDelete', { title: song.title }))) return;
   await storage.deleteSong(song.id).catch(() => {});
   songCache.delete(song.id);
   uploads = uploads.filter(u => u.id !== song.id);
@@ -383,7 +384,7 @@ async function startSong(song, diff) {
   try {
     const entry = await prepare(song);
     const { notes, speed } = generateChart(entry.analysis, diff, 1, { gimmicks: settings.gimmicks !== false });
-    if (!notes.length) throw new Error('No playable notes found');
+    if (!notes.length) throw new Error(t('err.noNotes'));
     let music;
     if (entry.buffer) music = { type: 'audio', buffer: entry.buffer };
     else {
@@ -403,7 +404,7 @@ async function startSong(song, diff) {
     });
   } catch (err) {
     console.error(err);
-    toast('載入失敗：' + (err.message || err), 4000);
+    toast(t('err.load', { err: err.message || err }), 4000);
     show('select');
   }
 }
@@ -497,8 +498,8 @@ function showResults(r) {
   };
   resultFailed = !!r.failed;
   $('btnSubmit').disabled = !!r.failed;
-  $('btnSubmit').textContent = 'Submit';
-  $('submitStatus').textContent = r.failed ? 'Failed runs cannot be submitted' : '';
+  $('btnSubmit').textContent = t('res.submit');
+  $('submitStatus').textContent = r.failed ? t('res.failedNoSubmit') : '';
   $('playerName').value = playerName();
   nameSubmitted = '';
   if (!r.failed && settings.autoSubmit) submitScore(true);
@@ -525,7 +526,7 @@ async function submitScore(auto = false) {
   setPlayerName(name, false);
   const btn = $('btnSubmit'), st = $('submitStatus');
   btn.disabled = true; btn.textContent = '…';
-  st.style.color = ''; st.textContent = auto ? `Submitting as ${name}…` : '';
+  st.style.color = ''; st.textContent = auto ? t('res.submitting', { name }) : '';
   try {
     const res = await fetch(API_BASE + '/api/score', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -534,12 +535,12 @@ async function submitScore(auto = false) {
     const data = await res.json();
     if (data.success) {
       nameSubmitted = name;
-      btn.textContent = 'Done';
-      st.textContent = `${name} · #${data.position} on this song`; st.style.color = '#5dffa8';
+      btn.textContent = t('res.done');
+      st.textContent = t('res.position', { name, pos: data.position }); st.style.color = '#5dffa8';
     }
-    else { btn.disabled = false; btn.textContent = 'Submit'; st.textContent = data.error || 'Submit failed'; st.style.color = '#ff4d5e'; }
+    else { btn.disabled = false; btn.textContent = t('res.submit'); st.textContent = data.error || t('res.submitFailed'); st.style.color = '#ff4d5e'; }
   } catch {
-    btn.disabled = false; btn.textContent = 'Submit'; st.textContent = 'Network error'; st.style.color = '#ff4d5e';
+    btn.disabled = false; btn.textContent = t('res.submit'); st.textContent = t('res.network'); st.style.color = '#ff4d5e';
   }
 }
 $('btnSubmit').addEventListener('click', () => submitScore(false));
@@ -564,14 +565,14 @@ function setPlayerName(n, syncInputs = true) {
 }
 function rerollName() {
   setPlayerName(randomName());
-  if (lastResult && !resultFailed) { $('btnSubmit').disabled = false; $('btnSubmit').textContent = 'Submit'; }
+  if (lastResult && !resultFailed) { $('btnSubmit').disabled = false; $('btnSubmit').textContent = t('res.submit'); }
 }
 playerName();
 $('btnNameDice').addEventListener('click', rerollName);
 $('btnSetNameDice').addEventListener('click', rerollName);
 $('playerName').addEventListener('input', e => {
   $('setName').value = e.target.value;
-  if (!resultFailed && e.target.value.trim() !== nameSubmitted) { $('btnSubmit').disabled = false; $('btnSubmit').textContent = 'Submit'; }
+  if (!resultFailed && e.target.value.trim() !== nameSubmitted) { $('btnSubmit').disabled = false; $('btnSubmit').textContent = t('res.submit'); }
 });
 $('setName').addEventListener('change', e => {
   const n = e.target.value.trim();
@@ -584,17 +585,17 @@ function esc(s) { const d = document.createElement('div'); d.textContent = s ?? 
 async function loadLeaderboard(tab) {
   document.querySelectorAll('.lb-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   const msg = $('lbMsg'), table = $('lbTable'), body = $('lbBody');
-  msg.style.display = 'block'; msg.textContent = 'Loading…';
+  msg.style.display = 'block'; msg.textContent = t('lb.loading');
   table.style.display = 'none'; body.innerHTML = '';
   try {
     let url = API_BASE + '/api/leaderboard?limit=30';
     if (tab === 'song' && playing) url += `&song=${encodeURIComponent(playing.song.title)}&difficulty=${playing.difficulty}`;
     const data = await (await fetch(url)).json();
     const list = data.leaderboard || [];
-    if (!list.length) { msg.textContent = 'No scores yet'; return; }
+    if (!list.length) { msg.textContent = t('lb.empty'); return; }
     table.querySelector('thead').innerHTML = tab === 'global'
-      ? '<tr><th class="c-no">#</th><th class="c-pl">Player</th><th class="c-sc">Score</th><th class="c-rk">Rank</th></tr>'
-      : '<tr><th class="c-no">#</th><th class="c-pl">Player</th><th class="c-sc">Score</th><th class="c-ac">Acc</th><th class="c-rk">Rank</th></tr>';
+      ? `<tr><th class="c-no">#</th><th class="c-pl">${t('lb.player')}</th><th class="c-sc">${t('lb.score')}</th><th class="c-rk">${t('lb.rank')}</th></tr>`
+      : `<tr><th class="c-no">#</th><th class="c-pl">${t('lb.player')}</th><th class="c-sc">${t('lb.score')}</th><th class="c-ac">${t('lb.acc')}</th><th class="c-rk">${t('lb.rank')}</th></tr>`;
     list.forEach((e, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML = tab === 'global'
@@ -605,7 +606,7 @@ async function loadLeaderboard(tab) {
     msg.style.display = 'none';
     table.style.display = 'table';
   } catch {
-    msg.textContent = 'Failed to load leaderboard';
+    msg.textContent = t('lb.failed');
   }
 }
 function openLeaderboard(fromResults) {
@@ -660,7 +661,19 @@ function syncSettingsUI() {
   $('setAutoSubmit').checked = settings.autoSubmit;
   $('setName').value = playerName();
   renderKeys();
+  syncLangUI();
 }
+
+// ---------- language (js/i18n.js) ----------
+function syncLangUI() {
+  document.querySelectorAll('.lang-seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === lang)));
+}
+document.querySelectorAll('.lang-seg button').forEach(b => b.addEventListener('click', () => {
+  if (setLang(b.dataset.v)) renderSongList();   // static text is swapped by applyI18n; the song list is built in JS
+  syncLangUI();
+}));
+applyI18n();
+syncLangUI();
 $('btnSettingsBack').addEventListener('click', () => show(settingsReturn === 'settings' || settingsReturn === 'calibrate' ? 'title' : settingsReturn));
 
 function renderKeys() {
@@ -681,7 +694,7 @@ function renderKeys() {
 let rebind = null;
 $('btnRebind').addEventListener('click', () => {
   rebind = { codes: [], labels: [] };
-  toast('請依序按下第 1 軌的按鍵…', 8000);
+  toast(t('key.first'), 8000);
 });
 function keyLabel(e) {
   if (e.code === 'Space') return 'SPC';
@@ -698,7 +711,7 @@ $('btnCalApply').addEventListener('click', () => {
   if (!cal?.result && cal?.result !== 0) return;
   settings.offset = cal.result;
   saveSettings();
-  toast(`Offset 已設為 ${settings.offset > 0 ? '+' : ''}${settings.offset}ms`);
+  toast(t('offset.set', { ms: `${settings.offset > 0 ? '+' : ''}${settings.offset}` }));
   stopCal(); syncSettingsUI(); show('settings');
 });
 function resetCal() {
@@ -706,7 +719,7 @@ function resetCal() {
   $('calResult').textContent = '';
   $('btnCalApply').classList.add('hidden');
   $('btnCalStart').classList.remove('hidden');
-  $('btnCalStart').textContent = 'Start';
+  $('btnCalStart').textContent = t('cal.start');
 }
 async function startCal() {
   unlockAudio();
@@ -749,14 +762,14 @@ function finishCal() {
   $('calRing').classList.remove('beat');
   const taps = [...cal.taps].sort((a, b) => a - b);
   $('btnCalStart').classList.remove('hidden');
-  $('btnCalStart').textContent = 'Again';
-  if (taps.length < 8) { $('calResult').textContent = '點擊次數太少，請再試一次'; return; }
+  $('btnCalStart').textContent = t('cal.again');
+  if (taps.length < 8) { $('calResult').textContent = t('cal.few'); return; }
   // drop outliers, then take the median
   const trimmed = taps.slice(Math.floor(taps.length * 0.15), Math.ceil(taps.length * 0.85));
   const med = trimmed[trimmed.length >> 1];
   const spread = Math.sqrt(trimmed.reduce((s, v) => s + (v - med) ** 2, 0) / trimmed.length);
   cal.result = Math.round(med);
-  $('calResult').innerHTML = `測得延遲 <b>${cal.result > 0 ? '+' : ''}${cal.result}ms</b>（穩定度 ±${Math.round(spread)}ms，${taps.length} 次）`;
+  $('calResult').innerHTML = t('cal.result', { ms: `${cal.result > 0 ? '+' : ''}${cal.result}`, spread: Math.round(spread), n: taps.length });
   $('btnCalApply').classList.remove('hidden');
 }
 function stopCal() {
@@ -774,13 +787,13 @@ $('calibrateScreen').addEventListener('pointerdown', e => {
 window.addEventListener('keydown', e => {
   if (rebind) {
     e.preventDefault();
-    if (e.code === 'Escape') { rebind = null; toast('已取消'); return; }
+    if (e.code === 'Escape') { rebind = null; toast(t('key.cancel')); return; }
     if (rebind.codes.includes(e.code)) return;
     rebind.codes.push(e.code); rebind.labels.push(keyLabel(e));
     if (rebind.codes.length === 4) {
       settings.keys = rebind.codes; settings.keyLabels = rebind.labels;
-      rebind = null; saveSettings(); toast('按鍵已更新');
-    } else toast(`請按下第 ${rebind.codes.length + 1} 軌的按鍵…`, 8000);
+      rebind = null; saveSettings(); toast(t('key.done'));
+    } else toast(t('key.next', { n: rebind.codes.length + 1 }), 8000);
     return;
   }
   if (e.target instanceof HTMLInputElement && e.target.type === 'text') return;

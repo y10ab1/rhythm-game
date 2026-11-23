@@ -14,6 +14,10 @@
   --cut: 14px;           /* slant of the parallelogram buttons */
   --font: 'Segoe UI', 'Noto Sans TC', 'Microsoft JhengHei', system-ui, sans-serif;
 }
+/* Japanese glyph shapes for kanji shared with Chinese (js/i18n.js sets <html lang>) */
+:root:lang(ja) {
+  --font: 'Segoe UI', 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', 'Noto Sans TC', system-ui, sans-serif;
+}
 * { margin: 0; padding: 0; box-sizing: border-box; }
 html, body {
   height: 100%;
@@ -315,6 +319,12 @@ canvas { display: block; width: 100%; height: 100%; }
   background: rgba(255, 255, 255, 0.08); clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
 }
 .seg button[aria-pressed="true"] { color: #fff; background: linear-gradient(90deg, var(--pink), var(--violet)); }
+/* 中文 / 日本語: in settings, and small in the title screen's top-right corner */
+.title-lang {
+  position: absolute; z-index: 3; width: 132px;
+  top: max(14px, env(safe-area-inset-top)); right: max(14px, env(safe-area-inset-right));
+}
+.title-lang button { padding: 5px 0; background: rgba(11, 7, 22, 0.55); }
 
 /* ---------- calibration ---------- */
 .cal-ring {

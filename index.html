@@ -18,6 +18,7 @@
   <section id="titleScreen" class="screen show">
     <div class="scene-bg"></div>
     <img class="char-art" src="assets/guye/invite.webp" alt="">
+    <div class="seg lang-seg title-lang" id="titleLang"><button data-v="zh">中文</button><button data-v="ja">日本語</button></div>
     <div class="title-main">
       <div class="logo">
         <span class="logo-a">RHYTHM</span>
@@ -62,7 +63,7 @@
   <section id="loadingScreen" class="screen">
     <div class="scene-bg"></div>
     <div class="loading-robots"><i class="robot black"></i><i class="robot white"></i></div>
-    <div class="loading-title" id="loadingTitle">Loading…</div>
+    <div class="loading-title" id="loadingTitle" data-i18n="load.loading">Loading…</div>
     <div class="progress"><div id="loadingBar"></div></div>
     <div class="hint" id="loadingHint"></div>
   </section>
@@ -76,20 +77,21 @@
       <span class="icon-btn ghost"></span>
     </header>
     <div class="settings panel">
-      <label class="row"><span>Scroll speed</span><input type="range" id="setSpeed" min="1" max="10" step="0.5"><output id="outSpeed"></output></label>
-      <label class="row"><span>Audio offset</span><input type="range" id="setOffset" min="-200" max="200" step="1"><output id="outOffset"></output></label>
-      <div class="row sub"><span></span><button class="btn small" id="btnCalibrate">Calibrate 校正</button><span></span></div>
-      <label class="row"><span>Music</span><input type="range" id="setMusic" min="0" max="100"><output id="outMusic"></output></label>
-      <label class="row"><span>Hit sound</span><input type="range" id="setHit" min="0" max="100"><output id="outHit"></output></label>
+      <label class="row"><span data-i18n="set.speed">Scroll speed</span><input type="range" id="setSpeed" min="1" max="10" step="0.5"><output id="outSpeed"></output></label>
+      <label class="row"><span data-i18n="set.offset">Audio offset</span><input type="range" id="setOffset" min="-200" max="200" step="1"><output id="outOffset"></output></label>
+      <div class="row sub"><span></span><button class="btn small" id="btnCalibrate" data-i18n="set.calibrate">Calibrate 校正</button><span></span></div>
+      <label class="row"><span data-i18n="set.music">Music</span><input type="range" id="setMusic" min="0" max="100"><output id="outMusic"></output></label>
+      <label class="row"><span data-i18n="set.hit">Hit sound</span><input type="range" id="setHit" min="0" max="100"><output id="outHit"></output></label>
       <label class="row"><span>FAST / SLOW</span><input type="checkbox" id="setTiming"></label>
-      <label class="row"><span>No fail</span><input type="checkbox" id="setNoFail"></label>
-      <label class="row"><span>孤夜</span><input type="checkbox" id="setChar"></label>
-      <div class="row"><span>演出</span><div class="seg" id="setFx"><button data-v="full">標準</button><button data-v="lite">輕量</button></div><span></span></div>
-      <div class="row"><span>音符</span><div class="seg" id="setNote"><button data-v="bachi">撥子</button><button data-v="slab">厚板</button><button data-v="sakura">櫻花</button><button data-v="glass">玻璃</button></div><span></span></div>
-      <div class="row"><span>譜面</span><div class="seg" id="setGimmick" title="華麗：掃弦 / 推弦 / 變速"><button data-v="on">華麗</button><button data-v="off">經典</button></div><span></span></div>
-      <div class="row keys-row name-setting"><span>Name</span><input type="text" id="setName" maxlength="20" autocomplete="off" spellcheck="false"><button class="btn small" id="btnSetNameDice" title="Random name">🎲</button></div>
-      <label class="row"><span>Auto-submit</span><input type="checkbox" id="setAutoSubmit"></label>
-      <div class="row keys-row"><span>Keys</span><button class="btn small" id="btnRebind">Change</button><span class="keys inline" id="settingsKeys"></span></div>
+      <label class="row"><span data-i18n="set.noFail">No fail</span><input type="checkbox" id="setNoFail"></label>
+      <label class="row"><span data-i18n="set.char">孤夜</span><input type="checkbox" id="setChar"></label>
+      <div class="row"><span data-i18n="set.fx">演出</span><div class="seg" id="setFx"><button data-v="full" data-i18n="set.fx.full">標準</button><button data-v="lite" data-i18n="set.fx.lite">輕量</button></div><span></span></div>
+      <div class="row"><span data-i18n="set.note">音符</span><div class="seg" id="setNote"><button data-v="bachi" data-i18n="set.note.bachi">撥子</button><button data-v="slab" data-i18n="set.note.slab">厚板</button><button data-v="sakura" data-i18n="set.note.sakura">櫻花</button><button data-v="glass" data-i18n="set.note.glass">玻璃</button></div><span></span></div>
+      <div class="row"><span data-i18n="set.gimmick">譜面</span><div class="seg" id="setGimmick" title="華麗：掃弦 / 推弦 / 變速" data-i18n-title="set.gimmick.tip"><button data-v="on" data-i18n="set.gimmick.on">華麗</button><button data-v="off" data-i18n="set.gimmick.off">經典</button></div><span></span></div>
+      <div class="row"><span data-i18n="set.lang">Language</span><div class="seg lang-seg" id="setLang"><button data-v="zh">中文</button><button data-v="ja">日本語</button></div><span></span></div>
+      <div class="row keys-row name-setting"><span data-i18n="set.name">Name</span><input type="text" id="setName" maxlength="20" autocomplete="off" spellcheck="false"><button class="btn small" id="btnSetNameDice" title="Random name" data-i18n-title="set.dice">🎲</button></div>
+      <label class="row"><span data-i18n="set.autoSubmit">Auto-submit</span><input type="checkbox" id="setAutoSubmit"></label>
+      <div class="row keys-row"><span data-i18n="set.keys">Keys</span><button class="btn small" id="btnRebind" data-i18n="set.change">Change</button><span class="keys inline" id="settingsKeys"></span></div>
     </div>
   </section>
 
@@ -102,10 +104,10 @@
       <span class="icon-btn ghost"></span>
     </header>
     <div class="cal-ring" id="calRing"><span id="calCount"></span></div>
-    <div class="cal-text" id="calText">跟著節拍，每一拍按一下</div>
+    <div class="cal-text" id="calText" data-i18n="cal.text">跟著節拍，每一拍按一下</div>
     <div class="cal-result" id="calResult"></div>
     <button class="btn primary" id="btnCalStart">Start</button>
-    <button class="btn hidden" id="btnCalApply">Apply</button>
+    <button class="btn hidden" id="btnCalApply" data-i18n="cal.apply">Apply</button>
   </section>
 
   <!-- Pause -->
@@ -143,8 +145,8 @@
       </div>
       <div class="res-offset" id="resOffset"></div>
       <div class="name-row">
-        <input type="text" id="playerName" placeholder="Name" maxlength="20" autocomplete="off" spellcheck="false">
-        <button class="btn small" id="btnNameDice" title="Random name">🎲</button>
+        <input type="text" id="playerName" placeholder="Name" data-i18n-placeholder="res.name" maxlength="20" autocomplete="off" spellcheck="false">
+        <button class="btn small" id="btnNameDice" title="Random name" data-i18n-title="set.dice">🎲</button>
         <button class="btn small" id="btnSubmit">Submit</button>
       </div>
       <div class="submit-status" id="submitStatus"></div>
@@ -165,17 +167,17 @@
       <span class="icon-btn ghost"></span>
     </header>
     <div class="lb-tabs">
-      <button class="lb-tab" data-tab="song">This song</button>
-      <button class="lb-tab" data-tab="global">Global</button>
+      <button class="lb-tab" data-tab="song" data-i18n="lb.song">This song</button>
+      <button class="lb-tab" data-tab="global" data-i18n="lb.global">Global</button>
     </div>
     <div class="lb-wrap panel">
-      <div class="lb-msg" id="lbMsg">Loading…</div>
+      <div class="lb-msg" id="lbMsg" data-i18n="lb.loading">Loading…</div>
       <table class="lb-table" id="lbTable"><thead></thead><tbody id="lbBody"></tbody></table>
     </div>
   </section>
 
   <div id="wipe"><i></i><i></i><i></i></div>
-  <div id="dropHint">放開以加入歌曲 · Drop to add song</div>
+  <div id="dropHint" data-i18n="drop.hint">放開以加入歌曲 · Drop to add song</div>
   <div id="toast"></div>
 </div>
 <script type="module" src="js/main.js"></script>

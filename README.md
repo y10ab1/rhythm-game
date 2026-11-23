@@ -14,6 +14,7 @@ A browser-based 4-key rhythm game. Play the built-in songs (generated with Googl
 - **Accurate timing** — the song clock follows the audio hardware clock (`getOutputTimestamp`, output latency compensated), input is judged at the event timestamp, not the frame time.
 - **Latency calibration** — tap-along calibration screen, plus a per-play suggestion based on your median hit offset.
 - **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
+- **中文 / 日本語** — UI and 孤夜's lines in both; picked from the browser language, switchable on the title screen and in Settings, or linked directly with `?lang=ja` / `?lang=zh` (`js/i18n.js`).
 - **Leaderboard** — global and per-song leaderboards powered by Cloudflare Workers + D1.
 - **孤夜 + 黑白無常** — the on-stage character and her two robots (black and white). Every built-in song has its own 3D music video (3 clips + a FEVER clip) that plays behind the lanes once you hold a 30 combo; uploaded songs get a mix of all of them.
 
@@ -42,6 +43,7 @@ js/chart.js           chart generation per difficulty
 js/midi.js            MIDI parser
 js/storage.js         IndexedDB for uploaded songs + analysis cache
 js/character.js       孤夜, her robots, per-song MV player, FEVER cut-in
+js/i18n.js            UI language (中文 / 日本語): strings, character lines, font stack
 songs/                built-in songs + manifest.json
 assets/guye/          character art, robot sprite sheets; mv/ = per-song MV clips + manifest.json
 tools/                Lyria + MV generation, manifest build, analyzer tests

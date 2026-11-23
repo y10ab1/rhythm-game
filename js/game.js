@@ -3,6 +3,7 @@
 // ============================================================
 
 import { Character, PETAL } from './character.js';
+import { FONT } from './i18n.js';
 
 export const LANE_COLORS = ['#ff5a6e', '#4fb4ff', '#4fffa0', '#ffcb47'];
 const LANE_RGB = [[255, 90, 110], [79, 180, 255], [79, 255, 160], [255, 203, 71]];
@@ -17,7 +18,6 @@ const TIERS = [
   { key: 'good', label: 'GOOD', win: WINDOWS.good, color: '#5ab8ff', weight: 0.4, hp: 0.2 },
 ];
 const MISS = { key: 'miss', label: 'MISS', color: '#ff4d5e' };
-const FONT = '"Segoe UI", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif';
 const DIFF_HUD = { easy: '#5dffa8', normal: '#5ab8ff', hard: '#ffcb47', expert: '#ff4d5e' };
 
 export const NOTE_STYLES = ['bachi', 'slab', 'sakura', 'glass'];

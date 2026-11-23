@@ -3,8 +3,9 @@
 //  Drawn into the game canvas; purely visual (never affects score).
 // ============================================================
 
+import { t, FONT } from './i18n.js';
+
 const BASE = 'assets/guye/';
-const FONT = '"Segoe UI", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif';
 
 function load(name) {
   const img = new Image();
@@ -35,15 +36,8 @@ const ROBOT_GLOW = typeof document === 'undefined' ? [] : ['255,61,139', '200,23
   return c;
 });
 
-const LINES = {
-  start: ['跟上我的節奏吧♪', '準備好了嗎？', '今晚就交給我吧'],
-  combo: ['不錯嘛～', '就是這樣！', '再快一點也沒問題吧？', '手感很好喔♪'],
-  fever: ['全開了喔！', '一起嗨起來！'],
-  break: ['欸？走神了喔', '沒關係，再來！', '呼…跟緊一點'],
-  lowHp: ['撐住啊！'],
-  stage: ['舞台開始！', '看好了喔♪', '這才是真正的我！'],
-};
-const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+// her lines, in the current UI language (js/i18n.js 'line.*')
+const pick = kind => { const arr = t('line.' + kind); return arr[Math.floor(Math.random() * arr.length)]; };
 
 // glowing cut-in text, rendered once per size at 2x (shadowBlur on big text every frame stalls phones)
 const glowCache = new Map();
@@ -501,7 +495,7 @@ export class Character {
     this.petals = [];
     this.lastBeat = -1;
     this.bars = 0;
-    this.bubble = { text: pick(LINES.start), at: now + 2200, dur: 2400 };
+    this.bubble = { text: pick('start'), at: now + 2200, dur: 2400 };
     this.lowHpSaid = false;
     this.fig = null;
     // MV background: on with the character in standard presentation, off in light mode
@@ -544,7 +538,7 @@ export class Character {
         this.feverUntil = now + FEVER_MS;
         const ms = this.cutinEnabled ? this.cutinMs() : 0;
         if (this.cutinEnabled) this.cutinAt = now;
-        this.say(pick(LINES.fever), now, 1800, ms);
+        this.say(pick('fever'), now, 1800, ms);
         this.burstPetals(now, 26);
         if (this.mvOn) { this.openStage(now, false); this.mv.fever(now); }
       }
@@ -552,7 +546,7 @@ export class Character {
     if (combo >= MV_COMBO && !this.stageOn && this.mvOn) this.openStage(now, true);
     if (combo > 0 && combo % 50 === 0) {
       this.setPose(this.img.heart, now, 2400, 1.18);
-      this.say(pick(LINES.combo), now);
+      this.say(pick('combo'), now);
       this.burstPetals(now, 16);
     }
   }
@@ -562,11 +556,11 @@ export class Character {
     this.missAt = now;
     if (this.stageOn && now >= this.feverUntil) this.stageOn = false;
     if (now >= this.feverUntil) this.fever = Math.max(0, this.fever - 0.12);
-    if (brokenCombo >= 20) this.say(pick(LINES.break), now);
+    if (brokenCombo >= 20) this.say(pick('break'), now);
   }
 
   onHp(hp, now) {
-    if (hp < 25 && !this.lowHpSaid) { this.lowHpSaid = true; this.say(pick(LINES.lowHp), now); }
+    if (hp < 25 && !this.lowHpSaid) { this.lowHpSaid = true; this.say(pick('lowHp'), now); }
     if (hp > 50) this.lowHpSaid = false;
   }
 
@@ -576,7 +570,7 @@ export class Character {
     this.stageOn = true;
     this.mv.play(now);
     this.mv.cutAt = now;
-    if (announce) { this.say(pick(LINES.stage), now, 1800); this.burstPetals(now, 18); }
+    if (announce) { this.say(pick('stage'), now, 1800); this.burstPetals(now, 18); }
   }
 
   say(text, now, dur = 2000, delay = 0) {
@@ -1156,8 +1150,8 @@ export class Character {
 
 // menu / results art, picked by rank
 export function resultArt(rank) {
-  if (rank === 'F') return { src: BASE + ART.kneelGray, line: '下次一定可以的…再來一次？' };
-  if (rank === 'SS' || rank === 'S') return { src: BASE + ART.heart, line: rank === 'SS' ? '完美！你就是我的最佳拍檔♡' : '好厲害！給你一個愛心♡' };
-  if (rank === 'A' || rank === 'B') return { src: BASE + ART.hands, line: '很棒喔！再一次就更完美了' };
-  return { src: BASE + ART.kneel, line: '節奏還差一點點，再陪我練練吧' };
+  if (rank === 'F') return { src: BASE + ART.kneelGray, line: t('res.line.F') };
+  if (rank === 'SS' || rank === 'S') return { src: BASE + ART.heart, line: t(rank === 'SS' ? 'res.line.SS' : 'res.line.S') };
+  if (rank === 'A' || rank === 'B') return { src: BASE + ART.hands, line: t('res.line.AB') };
+  return { src: BASE + ART.kneel, line: t('res.line.CD') };
 }
