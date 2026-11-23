@@ -146,7 +146,7 @@ export class Game {
     this.persp = true;
     let fieldW;
     if (this.arcs) {
-      const nearHalf = Math.min(this.W * 0.19, this.H * 0.4, 330);
+      const nearHalf = Math.min(this.W * 0.2, this.H * 0.4, 380);
       fieldW = nearHalf * 2;
       this.judgeY = this.H - Math.max(96, this.H * 0.2);
       this.horizonY = this.H * 0.05;
@@ -1736,6 +1736,46 @@ export class Game {
     g.restore();
   }
 
+  // wide screens: a slanted panel in the empty space left of the neck (mirrors 孤夜's card on the right):
+  // song title, difficulty and the judgement counts so far
+  drawSidePanel() {
+    const g = this.ctx;
+    const { W, H } = this;
+    const x = Math.max(28, W * 0.035), y = Math.max(56, H * 0.08);
+    const pw = Math.round(Math.max(190, Math.min(250, W * 0.13)));
+    const rows = [...TIERS, MISS];
+    const rh = 22, ph = 64 + rows.length * rh + 26;
+    const cut = 14;
+    g.save();
+    g.fillStyle = 'rgba(11,7,22,0.6)';
+    g.beginPath(); g.moveTo(x + cut, y); g.lineTo(x + pw, y); g.lineTo(x + pw - cut, y + ph); g.lineTo(x, y + ph); g.closePath(); g.fill();
+    g.fillStyle = '#ff3d8b';
+    g.beginPath(); g.moveTo(x + cut, y); g.lineTo(x + cut + 4, y); g.lineTo(x + 4, y + ph); g.lineTo(x, y + ph); g.closePath(); g.fill();
+    const ix = x + 24, iw = pw - 48;
+    g.textBaseline = 'middle'; g.textAlign = 'left';
+    g.fillStyle = '#fff';
+    g.font = `italic 900 18px ${FONT}`;
+    g.fillText(this.title, ix, y + 24, iw);
+    g.fillStyle = DIFF_HUD[this.difficulty] || '#fff';
+    g.font = `italic 900 11px ${FONT}`;
+    g.fillText(this.difficulty.toUpperCase(), ix, y + 46);
+    g.fillStyle = 'rgba(255,255,255,0.12)';
+    g.fillRect(ix, y + 58, iw, 1);
+    rows.forEach((r, i) => {
+      const ry = y + 72 + i * rh;
+      g.textAlign = 'left'; g.fillStyle = r.color; g.font = `italic 900 11px ${FONT}`;
+      g.fillText(r.label, ix - i * 1.5, ry);
+      g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `italic 800 15px ${FONT}`;
+      g.fillText(String(this.counts[r.key]), ix + iw - i * 1.5, ry);
+    });
+    const my = y + 72 + rows.length * rh + 4;
+    g.textAlign = 'left'; g.fillStyle = 'rgba(255,255,255,0.5)'; g.font = `italic 900 10px ${FONT}`;
+    g.fillText('MAX COMBO', ix - rows.length * 1.5, my);
+    g.textAlign = 'right'; g.fillStyle = '#fff'; g.font = `italic 800 15px ${FONT}`;
+    g.fillText(String(this.maxCombo), ix + iw - rows.length * 1.5, my);
+    g.restore();
+  }
+
   drawHUD(t, now, dt) {
     const g = this.ctx;
     const { W, H } = this;
@@ -1871,13 +1911,16 @@ export class Game {
         g.globalAlpha = 1;
       }
     }
-    g.textAlign = 'left';
-    g.fillStyle = 'rgba(255,255,255,0.7)';
-    g.font = `italic 800 11px ${FONT}`;
-    g.fillText(this.title, hx, this.arcs ? hy + 8 : hy + 24);
-    g.fillStyle = DIFF_HUD[this.difficulty] || '#fff';
-    g.font = `italic 900 10px ${FONT}`;
-    g.fillText(this.difficulty.toUpperCase(), hx, this.arcs ? hy + 23 : hy + 39);
+    if (this.arcs) this.drawSidePanel();   // wide screens: title + live judgements in the top-left
+    else {
+      g.textAlign = 'left';
+      g.fillStyle = 'rgba(255,255,255,0.7)';
+      g.font = `italic 800 11px ${FONT}`;
+      g.fillText(this.title, hx, hy + 24);
+      g.fillStyle = DIFF_HUD[this.difficulty] || '#fff';
+      g.font = `italic 900 10px ${FONT}`;
+      g.fillText(this.difficulty.toUpperCase(), hx, hy + 39);
+    }
 
     // progress
     const prog = Math.max(0, Math.min(1, t / this.endMs));

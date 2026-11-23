@@ -18,7 +18,7 @@ const ok = img => img && img.complete && img.naturalWidth > 0;
 export const ART = {
   stage: 'stage.webp', stageGray: 'stage_gray.webp', heart: 'heart.webp',
   hands: 'hands.webp', invite: 'invite.webp', kneel: 'kneel.webp', kneelGray: 'kneel_gray.webp',
-  robotBlack: 'robot_black.webp', robotWhite: 'robot_white.webp', bgBlur: 'bg_blur.jpg', face: 'face.webp',
+  robotBlack: 'robot_black.webp', robotWhite: 'robot_white.webp', bgBlur: 'bg_blur.jpg', face: 'face.webp', portrait: 'portrait.webp',
 };
 
 // 黑白無常: her two robots. Each sheet is 10 camera angles side by side (same crop, so they line up).
@@ -977,6 +977,7 @@ export class Character {
   drawFront(g, game, now) {
     if (this.mode === 'off') return;
     if (this.compact) this.drawAvatar(g, game, now);
+    else if (game.arcs) this.drawSpeaker(g, game, now);
     else this.drawBubble(g, game, now);
     if (this.cutinEnabled) {
       if (this.compact) this.drawCutinCompact(g, game, now);
@@ -1036,6 +1037,92 @@ export class Character {
     g.beginPath(); g.moveTo(x + 1, cy - 4); g.lineTo(x - 6, cy); g.lineTo(x + 1, cy + 4); g.fill();
     g.fillStyle = '#2a1030'; g.textAlign = 'left'; g.textBaseline = 'middle';
     g.fillText(b.text, x + 9, cy + 1, tw);
+    g.restore();
+  }
+
+  // wide screens: 孤夜's portrait card in the top-right corner; her lines pop out of it to the left.
+  // (the MV hides her stage figure most of the song, and the space right of the lanes is otherwise empty)
+  speakerRect(game) {
+    const { W, H } = game;
+    const S = Math.round(Math.max(96, Math.min(150, H * 0.16)));
+    return { x: W - Math.max(28, W * 0.035) - S, y: Math.max(56, H * 0.08), S };
+  }
+
+  drawSpeaker(g, game, now) {
+    const { x, y, S } = this.speakerRect(game);
+    const dt = Math.min(50, now - (this.lastSpeak || now)); this.lastSpeak = now;
+    const b = this.bubble;
+    const age = b ? now - b.at : -1;
+    const talking = !!b && age >= 0 && age <= b.dur && !(this.cutinEnabled && now - this.cutinAt < CUTIN_MS);
+    this.talkA = (this.talkA || 0) + ((talking ? 1 : 0) - (this.talkA || 0)) * Math.min(1, dt / 120);
+    const fever = this.inFever(now);
+    const missA = Math.max(0, 1 - (now - this.missAt) / 380);
+    const pop = talking && age < 160 ? 1 + 0.05 * Math.sin(Math.PI * age / 160) : 1;
+    const cut = S * 0.14;
+    const card = () => {
+      g.beginPath(); g.moveTo(cut, 0); g.lineTo(S, 0); g.lineTo(S - cut, S); g.lineTo(0, S); g.closePath();
+    };
+    g.save();
+    g.translate(x + S / 2 + (missA ? Math.sin(now * 0.09) * 4 * missA : 0), y + S / 2);
+    g.scale(pop, pop);
+    g.translate(-S / 2, -S / 2);
+    // glow while she talks or in FEVER
+    const glow = Math.max(this.talkA * 0.7, fever ? 0.6 + 0.4 * Math.sin(now * 0.012) : 0);
+    if (glow > 0.02 && ROBOT_GLOW[0]) {
+      const gr = S * 0.95;
+      g.globalCompositeOperation = 'lighter';
+      g.globalAlpha = glow * 0.55;
+      g.drawImage(ROBOT_GLOW[0], S / 2 - gr, S / 2 - gr, gr * 2, gr * 2);
+      g.globalCompositeOperation = 'source-over';
+    }
+    g.globalAlpha = 0.82 + 0.18 * this.talkA;
+    card();
+    const bgG = g.createLinearGradient(0, 0, 0, S);
+    bgG.addColorStop(0, '#2a1446'); bgG.addColorStop(1, '#120a22');
+    g.fillStyle = bgG; g.fill();
+    g.save();
+    card(); g.clip();
+    const img = ok(this.img.portrait) ? this.img.portrait : this.img.face;
+    if (ok(img)) g.drawImage(img, 0, 0, S, S);
+    if (missA > 0) { g.fillStyle = `rgba(30,0,10,${missA * 0.45})`; g.fillRect(0, 0, S, S); }
+    g.restore();
+    g.lineWidth = 2;
+    if (fever) {
+      const bg2 = g.createLinearGradient(0, S, S, 0);
+      bg2.addColorStop(0, '#ff3d8b'); bg2.addColorStop(0.6, '#b04dff'); bg2.addColorStop(1, '#3fd4ff');
+      g.strokeStyle = bg2;
+    } else g.strokeStyle = this.talkA > 0.5 ? '#ff3d8b' : 'rgba(255,255,255,0.3)';
+    card(); g.stroke();
+    // name plate
+    const nw = S * 0.62, nh = 20, nx = S * 0.2, ny = S - nh / 2;
+    const ng = g.createLinearGradient(nx, 0, nx + nw, 0);
+    ng.addColorStop(0, '#ff3d8b'); ng.addColorStop(1, '#7a3cff');
+    g.fillStyle = ng;
+    g.beginPath(); g.moveTo(nx + 7, ny); g.lineTo(nx + nw, ny); g.lineTo(nx + nw - 7, ny + nh); g.lineTo(nx, ny + nh); g.closePath(); g.fill();
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = `italic 900 12px ${FONT}`;
+    g.fillText('孤夜', nx + nw / 2, ny + nh / 2 + 1);
+    g.restore();
+
+    // her line, left of the card, pointing at it
+    if (!talking) return;
+    const a = Math.min(1, age / 150, (b.dur - age) / 250);
+    const slide = 1 - Math.pow(1 - Math.min(1, age / 180), 3);
+    const cy = y + S * 0.42;
+    g.save();
+    g.globalAlpha = a;
+    g.font = `700 16px ${FONT}`;
+    const right = x - 14 + (1 - slide) * 16;
+    const minLeft = game.bx(4, cy) + 24;
+    const tw = Math.min(g.measureText(b.text).width, right - minLeft - 28);
+    const pw = tw + 28, ph = 38, bx0 = right - pw;
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    g.beginPath(); g.roundRect(bx0, cy - ph / 2, pw, ph, 12); g.fill();
+    g.beginPath(); g.moveTo(right - 1, cy - 6); g.lineTo(right + 9, cy); g.lineTo(right - 1, cy + 6); g.fill();
+    g.strokeStyle = '#ff3d8b'; g.lineWidth = 2;
+    g.beginPath(); g.roundRect(bx0, cy - ph / 2, pw, ph, 12); g.stroke();
+    g.fillStyle = '#2a1030'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillText(b.text, bx0 + pw / 2, cy + 1, tw);
     g.restore();
   }
 
