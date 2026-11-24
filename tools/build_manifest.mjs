@@ -13,6 +13,7 @@ const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const songsDir = path.join(root, 'songs');
 
 const SONGS = [
+  { id: 'xingkong-de-guitu', title: '星空的歸途', artist: '孤夜 Gouya', genre: 'Original · Luci', file: 'xingkong-de-guitu.mp3', color: '#8fa8ff' },
   { id: 'neon-drift', title: 'Neon Drift', artist: 'Lyria 3.5', genre: 'Synthwave', file: 'neon-drift.mp3', color: '#50b4ff' },
   { id: 'fiesta-caliente', title: 'Fiesta Caliente', artist: 'Lyria 3.5', genre: 'Reggaeton', file: 'fiesta-caliente.mp3', color: '#ff8a3d' },
   { id: 'sunset-boulevard', title: 'Sunset Boulevard', artist: 'Lyria 3.5', genre: 'City Pop', file: 'sunset-boulevard.mp3', color: '#ff7eb6' },

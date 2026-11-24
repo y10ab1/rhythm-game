@@ -5,6 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
 import { loadStage, makeLights } from './stage.js';
 import { Rig } from './rig.js';
@@ -31,6 +32,19 @@ const camera = new THREE.PerspectiveCamera(35, W / H, 0.05, 200);
 const composer = new EffectComposer(renderer, new THREE.WebGLRenderTarget(W, H, { type: THREE.HalfFloatType, samples: q.has('noaa') ? 0 : 4 }));
 composer.setSize(W, H);
 composer.addPass(new RenderPass(scene, camera));
+// Chrome 158 (ANGLE/Vulkan) leaves a few NaN/Inf pixels in the half-float scene buffer on some frames; the bloom
+// blur spreads them into big black blocks. Zero them and cap HDR highlights before bloom.
+composer.addPass(new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+    void main() {
+      vec4 c = texture2D(tDiffuse, vUv);
+      bvec4 bad = bvec4(c.r != c.r || abs(c.r) > 6e4, c.g != c.g || abs(c.g) > 6e4, c.b != c.b || abs(c.b) > 6e4, c.a != c.a || abs(c.a) > 6e4);
+      if (any(bad)) c = vec4(0.0, 0.0, 0.0, 1.0);
+      gl_FragColor = vec4(clamp(c.rgb, 0.0, 64.0), clamp(c.a, 0.0, 1.0));
+    }`,
+}));
 const bloom = new UnrealBloomPass(new THREE.Vector2(W, H), 0.35, 0.5, 0.92);
 composer.addPass(bloom);
 composer.addPass(new OutputPass());
@@ -83,7 +97,7 @@ async function main() {
   if (q.has('nofog')) scene.fog = null;
   if (q.has('noemit')) { const re = new RegExp(q.get('noemit') || '.'); stage.glow.forEach(g => { if (re.test(g.mat.name)) g.mat.emissiveIntensity = 0; }); }
   const { Show } = await import('./show.js');
-  const show = new Show({ THREE, scene, camera, renderer, composer, bloom, vrm, rig, stage, lights, focus, robots, beat, W, H, FPS });
+  const show = new Show({ THREE, scene, camera, renderer, composer, bloom, vrm, rig, stage, lights, focus, robots, beat, song: SONG, W, H, FPS });
   if (q.get('mocap')) {
     // real dance motion (AIST++ or a skeleton extracted from a dance video), see mocap_prep.py
     const { MocapPlayer } = await import('./mocap.js');
@@ -123,7 +137,7 @@ function startLive(show, duration) {
   const css = document.createElement('style');
   css.textContent = `#ui{position:fixed;left:0;right:0;bottom:0;display:flex;gap:12px;align-items:center;padding:10px 16px;background:linear-gradient(transparent,#000c);color:#fff;font:14px sans-serif;opacity:.25;transition:opacity .2s}#ui:hover{opacity:1}#pp{background:#e0397a;border:0;color:#fff;border-radius:50%;width:36px;height:36px;font-size:16px;cursor:pointer}#sk{flex:1;accent-color:#e0397a}#hint{position:fixed;inset:0;display:grid;place-items:center;color:#fff;font:24px sans-serif;cursor:pointer;background:#0008}`;
   document.head.appendChild(css);
-  const hint = document.createElement('div'); hint.id = 'hint'; hint.textContent = '▶ 點擊播放 孤夜 × Starlight Stage'; document.body.appendChild(hint);
+  const hint = document.createElement('div'); hint.id = 'hint'; hint.textContent = `▶ 點擊播放 孤夜 × ${SONG}`; document.body.appendChild(hint);
   const pp = ui.querySelector('#pp'), sk = ui.querySelector('#sk'), tm = ui.querySelector('#tm');
   const toggle = () => { hint.remove(); audio.paused ? audio.play() : audio.pause(); };
   hint.onclick = toggle; pp.onclick = toggle;

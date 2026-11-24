@@ -237,27 +237,9 @@ MOVES.ending = move(16, [
 ], (p, x) => { if (x >= 3) p.root.yaw = 0; });
 
 // ---------------- timeline ----------------
-// [startBar, bars, move, mirrored]
-const PLAN = [
-  [0, 4, 'intro'],
-  [4, 4, 'stepClap'], [8, 4, 'pointHip'],
-  [12, 4, 'waveOver'],
-  [16, 3, 'clapHigh'], [19, 1, 'tension'],
-  [20, 2, 'hookA'], [22, 2, 'hookB'], [24, 2, 'hookA', true], [26, 2, 'hookB', true],
-  [28, 4, 'ballad'],
-  [32, 4, 'shuffle'], [36, 3, 'bodyRoll'],
-  [39, 5, 'waveOver', true],
-  [44, 3, 'clapHigh'], [47, 1, 'tension'],
-  [48, 2, 'hookA'], [50, 2, 'hookB'], [52, 2, 'hookA', true], [54, 2, 'hookB', true],
-  [56, 2, 'hookA'], [58, 2, 'stepClap'], [60, 1, 'pointHip'], [61, 1, 'tension'],
-  [62, 8, 'ending'],
-];
-export const SECTIONS = [
-  { from: 0, to: 4, name: 'intro' }, { from: 4, to: 12, name: 'verse' }, { from: 12, to: 16, name: 'build' },
-  { from: 16, to: 20, name: 'pre' }, { from: 20, to: 28, name: 'chorus' }, { from: 28, to: 32, name: 'break' },
-  { from: 32, to: 39, name: 'verse' }, { from: 39, to: 44, name: 'build' }, { from: 44, to: 48, name: 'pre' },
-  { from: 48, to: 56, name: 'chorus' }, { from: 56, to: 62, name: 'final' }, { from: 62, to: 99, name: 'end' },
-];
+// per song, see timelines.js; [startBar, bars, move, mirrored]
+let PLAN = [], SECTIONS = [];
+export function useTimeline(tl) { PLAN = tl.plan; SECTIONS = tl.sections; }
 
 const BLEND = 0.5;   // beats of cross-fade between moves
 export function poseAt(b, energy = 0.7) {

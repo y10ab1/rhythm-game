@@ -10,13 +10,13 @@ A browser-based 4-key rhythm game. Play the built-in songs (generated with Googl
 - **Automatic beat detection** — multi-band spectral-flux onset detection, tempo estimation with octave / 2:3 correction, a sub-millisecond beat-grid fit and drift correction for live recordings.
 - **4 difficulties per song** — Easy / Normal / Hard / Expert with a level number, generated from the detected onsets snapped to the beat grid (16ths, or triplets for swung music), with chords and hold notes.
 - **Gimmick notes** (Settings → 譜面 華麗 / 經典) — sweeps (Normal+: a staircase of steps along the melody), slides (Hard+: holds that bend into the next lane, the next key takes over) and scroll-speed changes per song section (Hard+, with a brake before the drop on Expert). Judging times never change.
-- **Built-in songs** — 10 Lyria 3.5 tracks in different styles (synthwave, reggaeton, city pop, funk/disco, nu-disco, K-pop, electro house, chiptune, pop-punk, drum & bass; 90–175 BPM) plus Für Elise (a grid-exact MIDI arrangement, `tools/make_fur_elise.py`).
+- **Built-in songs** — 孤夜's own song 《星空的歸途》 (music & lyrics: Luci, Gamania; from the [official MV](https://www.youtube.com/watch?v=S2Uni6OgNSU)), 10 Lyria 3.5 tracks in different styles (synthwave, reggaeton, city pop, funk/disco, nu-disco, K-pop, electro house, chiptune, pop-punk, drum & bass; 90–175 BPM) plus Für Elise (a grid-exact MIDI arrangement, `tools/make_fur_elise.py`).
 - **Accurate timing** — the song clock follows the audio hardware clock (`getOutputTimestamp`, output latency compensated), input is judged at the event timestamp, not the frame time.
 - **Latency calibration** — tap-along calibration screen, plus a per-play suggestion based on your median hit offset.
 - **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
 - **中文 / 日本語** — UI and 孤夜's lines in both; picked from the browser language, switchable on the title screen and in Settings, or linked directly with `?lang=ja` / `?lang=zh` (`js/i18n.js`).
 - **Leaderboard** — global and per-song leaderboards powered by Cloudflare Workers + D1.
-- **孤夜 + 黑白無常** — the on-stage character and her two robots (black and white). Every built-in song has its own 3D music video (3 clips + a FEVER clip) that plays behind the lanes once you hold a 30 combo; uploaded songs get a mix of all of them.
+- **孤夜 + 黑白無常** — the on-stage character and her two robots (black and white). Every built-in song has its own 3D music video (3 clips + a FEVER clip) that plays behind the lanes once you hold a 30 combo; uploaded songs get a mix of all of them. Starlight Stage and 《星空的歸途》 instead have a full-length 3D dance performance by 孤夜, synced to the song (`tools/dance`).
 
 ## Controls
 
@@ -59,6 +59,15 @@ python3 tools/generate_lyria.py
 # keyframes -> review tools/mv_work/kf/ (delete bad ones and rerun) -> clips -> encode -> track -> manifest
 python3 tools/generate_mv.py keyframes
 python3 tools/generate_mv.py all            # or: all <song_id ...>
+
+# 3D dance performance (孤夜 VRM on the 3D stage, AIST++ motion), e.g. for xingkong-de-guitu:
+# song structure in tools/dance/timelines.js (sections, cameras, moods) + PLANS_AIST in tools/dance/mocap_prep.py
+node tools/dance/analyze.mjs songs/xingkong-de-guitu.mp3 tools/mv_work/dance/xingkong-de-guitu.json
+python -I tools/dance/mocap_prep.py aist <aist_dir> <aist_dir>/beats.json tools/mv_work/dance/xingkong-de-guitu.json \
+  <guyeh>/3D/孤夜/Guye1_1.vrm tools/mv_work/dance/mocap/xingkong-de-guitu_aist.json
+W=2560 H=1440 FLAGS="mocap=xingkong-de-guitu_aist&frame=center" node tools/dance/render.mjs game xingkong-de-guitu
+W=1080 H=1920 FLAGS="mocap=xingkong-de-guitu_aist&frame=portrait" node tools/dance/render.mjs game xingkong-de-guitu
+python3 tools/dance/export_game.py xingkong-de-guitu    # -> assets/guye/mv/ + manifest, then tools/sync_assets.py
 
 # rebuild songs/manifest.json (BPM, length, levels) — needs ffmpeg
 node tools/build_manifest.mjs
@@ -108,4 +117,4 @@ Set `API_BASE` in `js/main.js` to the Worker URL.
 
 ## License
 
-MIT. Built-in tracks were generated with Google Lyria; the MV clips with Gemini image models and Gemini Omni.
+MIT for the code. 《星空的歸途》 (`songs/xingkong-de-guitu.mp3`) belongs to Gamania and is not covered by the MIT license; the other built-in tracks were generated with Google Lyria; the MV clips with Gemini image models and Gemini Omni.

@@ -1,9 +1,12 @@
 """Dance motion -> VRM clip on the target song's beat grid.
 
-  aist  <aist_dir> <aist_beats.json> <target_beats.json> <vrm> <out.json>
-        AIST++ SMPL rotations (same T-pose rest frame as VRM normalized bones) cut into sections per PLAN_AIST.
+  aist  <aist_dir> <aist_beats.json> <target_beats.json> <vrm> <out.json> [song]
+        AIST++ SMPL rotations (same T-pose rest frame as VRM normalized bones) cut into sections per PLANS_AIST[song]
+        (song defaults to the target beats file name, e.g. tools/mv_work/dance/starlight-stage.json).
   kpop  <pose.npz> <video_beats.json> <target_beats.json> <vrm> <out.json> <src_first_beat>
         MediaPipe 3D landmarks -> bone rotations, time-warped beat-to-beat onto the target song.
+  smpl  <gvhmr.npz> <video_fps> <video_beats.json> <target_beats.json> <out.json> <src_first_beat>
+        GVHMR (video -> SMPL-X) rotations, used like AIST++ and time-warped like kpop. Much steadier than kpop.
 
 Clip format: {fps, n, bones: {vrmBone: [x,y,z,w]*n}, hips: [x,y,z]*n}. Rotations are local, in the character
 frame (y up, facing +z, her left = +x), relative to the T-pose rest. hips = root offset (y unused: the player
@@ -80,8 +83,10 @@ SMPL2VRM = {0: 'hips', 1: 'leftUpperLeg', 2: 'rightUpperLeg', 3: 'spine', 4: 'le
             13: 'leftShoulder', 14: 'rightShoulder', 15: 'head', 16: 'leftUpperArm', 17: 'rightUpperArm',
             18: 'leftLowerArm', 19: 'rightLowerArm', 20: 'leftHand', 21: 'rightHand'}
 
-# [start bar, bars, sequence, source bar, mirror]   (target song: 64 bars of 4 beats)
-PLAN_AIST = [
+# per song: [start bar, bars, sequence, source bar, mirror]. Bars count from the target song's first downbeat
+# (beats json 'downbeat'), as in timelines.js. Sequences need an entry in the AIST beats json (aist_beats.py).
+PLANS_AIST = {}
+PLANS_AIST['starlight-stage'] = [   # 64 bars, 125 BPM
     (0, 4, 'gJB_sFM_cAll_d08_mJB5_ch13', 0, False),     # intro: ballet jazz, open and graceful
     (4, 8, 'gJS_sFM_cAll_d01_mJS3_ch04', 2, False),     # verse: street jazz
     (12, 4, 'gJS_sFM_cAll_d01_mJS3_ch04', 10, False),   # build
@@ -93,17 +98,38 @@ PLAN_AIST = [
     (48, 8, 'gLH_sFM_cAll_d18_mLH4_ch19', 1, False),    # chorus 2
     (56, 8, 'gHO_sFM_cAll_d21_mHO5_ch20', 2, False),    # final: house
 ]
+# 星空的歸途: 80 bars at 95 BPM (sections in timelines.js). Slower sources (90-110 BPM pop / middle hip-hop /
+# street jazz) where possible, so the time-warp to 95 BPM stays close to the dancers' own speed.
+PLANS_AIST['xingkong-de-guitu'] = [
+    (0, 2, 'gJB_sFM_cAll_d08_mJB5_ch13', 0, False),     # intro: ballet jazz, open and graceful
+    (2, 7, 'gJB_sFM_cAll_d07_mJB5_ch06', 2, False),     # riff: ballet jazz (another dancer)
+    (9, 10, 'gPO_sFM_cAll_d11_mPO1_ch09', 1, False),    # verse: pop (90 BPM)
+    (19, 6, 'gJS_sFM_cAll_d01_mJS3_ch04', 2, False),    # build: street jazz
+    (25, 10, 'gLH_sFM_cAll_d17_mLH4_ch12', 1, False),   # chorus: LA hip-hop
+    (35, 2, 'gJB_sFM_cAll_d08_mJB5_ch13', 4, False),    # break: ballet jazz
+    (37, 6, 'gPO_sFM_cAll_d12_mPO1_ch16', 1, True),     # verse 2: pop (mirrored)
+    (43, 4, 'gJS_sFM_cAll_d03_mJS3_ch04', 2, False),    # chorus 2: street jazz
+    (47, 5, 'gWA_sFM_cAll_d27_mWA0_ch15', 2, False),    # dance break: waacking
+    (52, 6, 'gMH_sFM_cAll_d24_mMH3_ch18', 1, False),    # dance break: middle hip-hop
+    (58, 4, 'gJB_sFM_cAll_d07_mJB5_ch06', 9, True),     # bridge: ballet jazz (mirrored)
+    (62, 8, 'gLH_sFM_cAll_d18_mLH4_ch19', 1, False),    # last chorus: LA hip-hop
+    (70, 6, 'gMH_sFM_cAll_d23_mMH3_ch11', 2, False),    # last chorus: middle hip-hop
+    (76, 4, 'gPO_sFM_cAll_d10_mPO1_ch02', 4, False),    # outro: pop
+]
 
 
-def aist(aist_dir, beats_json, target_json, vrm, out):
+def aist(aist_dir, beats_json, target_json, vrm, out, song=None):
+    import os
+    song = song or os.path.splitext(os.path.basename(target_json))[0]
+    plan = PLANS_AIST[song]
     sb = json.load(open(beats_json))
     TB, tmeta = load_beats(target_json)
     dur = tmeta['duration']
     t = np.arange(0, dur, 1 / FPS)
-    tb = beat_of(t, TB)                              # target beat of each output frame
+    tb = beat_of(t, TB) - tmeta.get('downbeat', 0)   # target beat of each output frame, from the first downbeat
     names = sorted(set(SMPL2VRM.values()))
     segs = []
-    for (bar0, nbar, seq, srcbar, mir) in PLAN_AIST:
+    for (bar0, nbar, seq, srcbar, mir) in plan:
         d = pickle.load(open(f'{aist_dir}/motions/{seq}.pkl', 'rb'))
         p = d['smpl_poses'].reshape(-1, 24, 3)
         rots = {j: R.from_rotvec(p[:, j]) for j in range(24)}
@@ -114,6 +140,8 @@ def aist(aist_dir, beats_json, target_json, vrm, out):
         P = 60 / sb[seq]['bpm']
         s0 = sb[seq]['t0'] + srcbar * 4 * P
         f0, f1 = int(s0 * 60), min(len(p), int((s0 + nbar * 4 * P) * 60))
+        if (s0 + nbar * 4 * P) * 60 > len(p):
+            print(f'  note: {seq} bar {srcbar}+{nbar} runs past its end ({len(p) / 60:.1f} s), holds the last frame')
         yaw = np.arctan2(np.mean(fwd[f0:f1, 0]), np.mean(fwd[f0:f1, 2]))
         unyaw = R.from_euler('y', -yaw)
         rots[0] = unyaw * rots[0]
@@ -320,9 +348,53 @@ def kpop(npz, vbeats_json, target_json, vrm, out, src_first_beat):
     write_clip(out, bones, hips)
 
 
+# ---------------- dance video via GVHMR (SMPL-X rotations) ----------------
+
+def smpl(gv_npz, src_fps, vbeats_json, target_json, out, src_first_beat):
+    """GVHMR world-grounded SMPL-X body rotations (same joint order as SMPL 0-21, so the AIST++ mapping applies),
+    time-warped beat-to-beat onto the target song like kpop(). gv_npz from GVHMR (export_gvhmr.py)."""
+    d = np.load(gv_npz)
+    fps = float(src_fps)
+    go, bp, tr = d['global_orient'], d['body_pose'].reshape(len(d['global_orient']), 21, 3), d['transl']
+    n = len(go)
+    rots = {0: R.from_rotvec(go)}
+    for j in range(1, 22):
+        rots[j] = R.from_rotvec(bp[:, j - 1])
+    rots[6] = rots[6] * rots[9]                      # no upperChest on this model: fold spine3 into chest
+
+    TB, tmeta = load_beats(target_json)
+    VB, _ = load_beats(vbeats_json)
+    t = np.arange(0, tmeta['duration'], 1 / FPS)
+    src_t = time_of(beat_of(t, TB) + src_first_beat, VB)
+    fi = np.clip(src_t * fps, 0, n - 1.001)
+    i0 = np.floor(fi).astype(int); a = fi - i0
+    f0, f1 = i0.min(), i0.max() + 2
+
+    # face the audience: remove the mean yaw of the used span
+    fwd = rots[0].apply([0, 0, 1])
+    yaw = np.arctan2(np.mean(fwd[f0:f1, 0]), np.mean(fwd[f0:f1, 2]))
+    unyaw = R.from_euler('y', -yaw)
+    rots[0] = unyaw * rots[0]
+    pos = unyaw.apply(tr - tr[f0:f1].mean(0)) * 0.6   # travel scaled down for the stage
+    pos[:, 1] = 0
+    pos = np.clip(pos, [-1.3, 0, -0.8], [1.3, 0, 0.8])
+
+    bones = {}
+    for j, nm in SMPL2VRM.items():
+        if j >= 22:
+            continue
+        q = quat_continuity(rots[j].as_quat())
+        qq = q[i0] * (1 - a)[:, None] + q[i0 + 1] * a[:, None]
+        bones[nm] = qq / np.linalg.norm(qq, axis=1, keepdims=True)
+    hips = pos[i0] * (1 - a)[:, None] + pos[i0 + 1] * a[:, None]
+    write_clip(out, bones, hips)
+
+
 if __name__ == '__main__':
     mode, *a = sys.argv[1:]
     if mode == 'aist':
         aist(*a)
+    elif mode == 'smpl':
+        smpl(*a[:5], int(a[5]))
     else:
         kpop(*a[:5], int(a[5]))

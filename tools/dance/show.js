@@ -1,6 +1,7 @@
 // The performance: beat clock, choreography -> rig, cameras cut on bar lines, beat-synced lights, beams, sparkles, robots.
 import * as THREE from 'three';
-import { poseAt, SECTIONS } from './choreo.js';
+import { poseAt, useTimeline } from './choreo.js';
+import { timeline } from './timelines.js';
 import { MocapPlayer } from './mocap.js';
 
 const smooth = t => t * t * (3 - 2 * t);
@@ -12,40 +13,7 @@ const BODY_JOINTS = ['headTop', 'headMid', 'neck', 'chest', 'hips',
   'leftUpperArm', 'leftLowerArm', 'leftHand', 'rightUpperArm', 'rightLowerArm', 'rightHand',
   'leftUpperLeg', 'leftLowerLeg', 'leftFoot', 'rightUpperLeg', 'rightLowerLeg', 'rightFoot'];
 
-// ---- camera shots: [fromBar, toBar, kind, opts] ----
-const SHOTS = [
-  [0, 2, 'crane', { from: [0, 3.6, 11.5], to: [0, 1.9, 7.6], look: [0, 1.35, 0], fov: 36 }],
-  [2, 4, 'dolly', { from: [0.5, 1.35, 5.4], to: [0, 1.3, 3.9], look: [0, 1.2, 0], fov: 34 }],
-  [4, 6, 'dolly', { from: [-0.6, 1.05, 4.8], to: [0.6, 1.05, 4.6], look: [0, 0.95, 0], fov: 36 }],
-  [6, 8, 'dolly', { from: [-1.3, 0.35, 3.3], to: [-0.5, 0.4, 3.0], look: [0, 1.15, 0], fov: 40 }],
-  [8, 10, 'orbit', { r: 3.9, y: 1.25, a0: 0.45, a1: 0.8, look: [0, 1.0, 0], fov: 36 }],
-  [10, 12, 'dolly', { from: [0.35, 1.48, 1.7], to: [0.15, 1.45, 1.45], look: [0, 1.4, 0], fov: 30 }],
-  [12, 16, 'orbit', { r: 5.2, y: 1.7, a0: -0.7, a1: 0.7, look: [0, 1.15, 0], fov: 38 }],
-  [16, 19, 'dolly', { from: [0, 3.4, 5.8], to: [0, 2.6, 4.6], look: [0, 1.0, 0], fov: 38 }],
-  [19, 20, 'dolly', { from: [0, 1.2, 5.2], to: [0, 1.25, 2.6], look: [0, 1.0, 0], fov: 36, ease: 'in' }],
-  [20, 22, 'crane', { from: [0, 3.2, 10], to: [0, 2.0, 7.2], look: [0, 1.3, 0], fov: 36, kick: true }],
-  [22, 24, 'orbit', { r: 3.6, y: 1.2, a0: -0.9, a1: 0.9, look: [0, 1.05, 0], fov: 38, kick: true }],
-  [24, 26, 'dolly', { from: [1.3, 0.35, 3.3], to: [0.5, 0.4, 3.0], look: [0, 1.15, 0], fov: 42, kick: true }],
-  [26, 28, 'dolly', { from: [0, 1.05, 4.3], to: [0, 1.1, 3.8], look: [0, 1.0, 0], fov: 38, kick: true }],
-  [28, 30, 'dolly', { from: [0.2, 1.42, 1.9], to: [0.1, 1.45, 1.5], look: [0, 1.38, 0], fov: 30 }],
-  [30, 32, 'orbit', { r: 3.2, y: 1.6, a0: 1.2, a1: 0.25, look: [0, 1.25, 0], fov: 34 }],
-  [32, 36, 'track', { off: [0, 1.15, 4.4], look: [0, 0.95, 0], fov: 36 }],
-  [36, 39, 'orbit', { r: 3.4, y: 1.35, a0: -0.55, a1: -0.25, look: [0, 1.15, 0], fov: 34 }],
-  [39, 44, 'orbit', { r: 5.6, y: 2.0, a0: 0.8, a1: -0.8, look: [0, 1.15, 0], fov: 38 }],
-  [44, 47, 'dolly', { from: [-0.8, 4.6, 3.6], to: [0.8, 4.2, 3.2], look: [0, 0.8, 0], fov: 40 }],
-  [47, 48, 'dolly', { from: [0, 1.2, 5.2], to: [0, 1.25, 2.6], look: [0, 1.0, 0], fov: 36, ease: 'in' }],
-  [48, 50, 'crane', { from: [0, 3.6, 11], to: [0, 2.0, 7.0], look: [0, 1.3, 0], fov: 36, kick: true }],
-  [50, 52, 'orbit', { r: 3.6, y: 1.2, a0: 0.9, a1: -0.9, look: [0, 1.05, 0], fov: 38, kick: true }],
-  [52, 54, 'dolly', { from: [0.3, 1.4, 2.6], to: [-0.3, 1.4, 2.4], look: [0, 1.2, 0], fov: 34, kick: true }],
-  [54, 56, 'dolly', { from: [-1.3, 0.35, 3.3], to: [-0.5, 0.4, 3.0], look: [0, 1.15, 0], fov: 42, kick: true }],
-  [56, 58, 'dolly', { from: [0, 1.05, 4.6], to: [0, 1.1, 4.0], look: [0, 1.0, 0], fov: 38, kick: true }],
-  [58, 60, 'orbit', { r: 3.8, y: 1.3, a0: -0.5, a1: -0.85, look: [0, 1.0, 0], fov: 36, kick: true }],
-  [60, 62, 'orbit', { r: 4.2, y: 1.6, a0: 0.9, a1: -0.3, look: [0, 1.05, 0], fov: 38, kick: true }],
-  [62, 63, 'dolly', { from: [0, 1.2, 4.4], to: [0, 1.3, 3.2], look: [0, 1.1, 0], fov: 36 }],
-  [63, 99, 'dolly', { from: [0.1, 1.38, 2.3], to: [0.05, 1.42, 1.9], look: [0, 1.3, 0], fov: 32, dur: 24 }],
-];
-
-// colour moods per section
+// colour moods per section (a song's timeline can override them)
 const MOOD = {
   intro: { a: 0x3d5bff, b: 0x9a4bff, key: 0.6, neon: 0.5, beams: 0.25, spark: 0.1 },
   verse: { a: 0xff3d9a, b: 0x2fd8ff, key: 1.0, neon: 1.0, beams: 0.5, spark: 0.25 },
@@ -82,7 +50,13 @@ export class Show {
     Object.assign(this, ctx);
     const { beat, scene, vrm, robots } = this;
     this.P = 60 / beat.bpm;
-    this.bars = SECTIONS;
+    // the song's timeline (timelines.js); bars count from its first downbeat
+    const tl = timeline(this.song);
+    useTimeline(tl);
+    this.shots = tl.shots;
+    this.mood = { ...MOOD, ...(tl.mood || {}) };
+    this.endB = tl.end * 4;                // beat (from the downbeat) where the ending move starts
+    this.db = beat.downbeat || 0;
     this.lastT = null;
 
     // eyes follow the camera
@@ -158,8 +132,8 @@ export class Show {
 
   step(t, dt, full) {
     const { rig, vrm, camera } = this;
-    const b = this.beatAt(t);
-    const e = this.energyAt(b);
+    const b = this.beatAt(t) - this.db;     // beats from the first downbeat
+    const e = this.energyAt(b + this.db);
     const { pose, section } = poseAt(b, e);
 
     // blinks layered on the choreography's expression
@@ -170,7 +144,8 @@ export class Show {
     if (this.mocap) {
       // real dance motion; the last bars settle into the keyframed peace-sign ending
       let blend = null;
-      if (b > 249.5) { rig.apply(pose); blend = { ...MocapPlayer.capture(rig), w: smooth(clamp01((b - 249.5) / 1.5)) }; }
+      const b0 = this.endB + 1.5;
+      if (b > b0) { rig.apply(pose); blend = { ...MocapPlayer.capture(rig), w: smooth(clamp01((b - b0) / 1.5)) }; }
       this.mocap.apply(t, blend);
       rig.applyExpr(pose.expr);
     } else rig.apply(pose);
@@ -199,7 +174,7 @@ export class Show {
       const y = 1.85 + 0.12 * Math.sin(b * Math.PI / 2 + i * 1.7) + (fast ? 0.18 * Math.max(0, Math.cos(b * Math.PI * 2)) ** 4 : 0);
       const orbit = V3(hips.x + Math.cos(a) * rad, y, Math.sin(a) * rad * 0.8 - 0.1);
       const park = V3(hips.x + (i ? 0.85 : -0.85), 1.75 + 0.06 * Math.sin(b * Math.PI / 2 + i * 2), -0.35);
-      const k = smooth(clamp01((b - 248) / 4));                 // last bars: settle at her shoulders
+      const k = smooth(clamp01((b - this.endB) / 4));                 // last bars: settle at her shoulders
       r.position.copy(orbit.lerp(park, k));
       r.rotation.set(0.15 * Math.sin(b * Math.PI) * (1 - k), lerp(-a + Math.PI / 2, 0, k), 0.2 * Math.sin(b * Math.PI / 2 + i) * (1 - k));
     });
@@ -207,7 +182,7 @@ export class Show {
 
   updateCamera(t, b, section, pose) {
     const bar = b / 4;
-    const s = SHOTS.find(x => bar < x[1]) || SHOTS[SHOTS.length - 1];
+    const s = this.shots.find(x => bar < x[1]) || this.shots[this.shots.length - 1];
     const [b0, b1, kind, o] = s;
     const span = o.dur ? o.dur : (b1 - b0);
     let u = clamp01((bar - b0) / span);
@@ -262,7 +237,7 @@ export class Show {
     z = Math.min(2.6, Math.max(0.55, z));
     // where the frame's origin must be (in unzoomed pixels) for the body centre and head top to land on target
     const want = { z: Math.log(z), cx, top: top[1] };
-    const shot = SHOTS.findIndex(x => b / 4 < x[1]);
+    const shot = this.shots.findIndex(x => b / 4 < x[1]);
     const f = this.frameF;
     if (!f || shot !== this.frameShot) { this.frameF = { ...want }; this.frameShot = shot; }
     else {
@@ -284,7 +259,7 @@ export class Show {
   }
 
   updateLights(t, b, e, section) {
-    const m = MOOD[section] || MOOD.verse;
+    const m = this.mood[section] || this.mood.verse;
     const ph = b - Math.floor(b);
     const hit = Math.exp(-ph * 6);                            // decays after every beat
     const barHit = Math.floor(b) % 4 === 0 ? hit : 0;
