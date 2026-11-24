@@ -12,6 +12,11 @@ const rgba = (lane, a) => `rgba(${LANE_RGB[lane][0]},${LANE_RGB[lane][1]},${LANE
 // Judgement windows (ms, +/-)
 export const WINDOWS = { perfect: 42, great: 85, good: 130, bad: 165 };
 const SWEEP_LENIENCY = 1.3;   // sweep steps are judged with windows this much wider
+// slides are about where the finger is, not when it crosses a line: from SLIDE_EARLY ms before a bend
+// a finger in the lane it bends into takes it over (PERFECT up to the bend, then late tiers), and a
+// finger counts as there once it is within SLIDE_REACH lanes of the boundary
+const SLIDE_EARLY = 300;
+const SLIDE_REACH = 0.15;
 const TIERS = [
   { key: 'perfect', label: 'PERFECT', win: WINDOWS.perfect, color: '#ffe066', weight: 1, hp: 1.2 },
   { key: 'great', label: 'GREAT', win: WINDOWS.great, color: '#5dffa8', weight: 0.75, hp: 0.8 },
@@ -125,6 +130,9 @@ export class Game {
     this.hooks = hooks; // { onEnd(result) }
     this.state = 'idle';
     this.keyDown = [false, false, false, false];
+    this.pointers = new Map();          // pointerId -> { lane, x, y } (canvas px)
+    this.laneCount = [0, 0, 0, 0];      // fingers on each lane
+    this.dbg = null;                    // DebugLog when ?debug=1
     this.char = new Character();
     this.resize();
     this.loop = this.loop.bind(this);
@@ -179,24 +187,81 @@ export class Game {
   laneColor(l) { return LANE_COLORS[l]; }
   get centerX() { return this.fieldX + this.fieldW / 2; }
 
-  laneAt(clientX) {
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (clientX - rect.left) / rect.width * this.W;
-    return Math.max(0, Math.min(3, Math.floor((x - this.fieldX) / this.laneW)));
+  // ---------- touch ----------
+  // client -> canvas px
+  toCanvas(cx, cy) {
+    const r = this.canvas.getBoundingClientRect();
+    return [(cx - r.left) / r.width * this.W, (cy - r.top) / r.height * this.H];
+  }
+  // lane coordinate of a canvas point (lane l spans [l, l+1), centre l + 0.5). It follows the drawn neck,
+  // which widens below the judge line where the thumbs actually are, so a touch counts for the lane it
+  // visibly lands in.
+  lanePos(x, y) {
+    const s = this.persp ? Math.max(this.farRatio, this.sOfY(Math.max(this.horizonY, y))) : 1;
+    return (x - this.centerX) / (this.laneW * s) + 2;
+  }
+  laneOfPos(pos) { return Math.max(0, Math.min(3, Math.floor(pos))); }
+
+  touchDown(id, cx, cy, perf, e) {
+    if (this.state !== 'playing') return;
+    const [x, y] = this.toCanvas(cx, cy), pos = this.lanePos(x, y), lane = this.laneOfPos(pos);
+    this.pointers.set(id, { lane, x, y });
+    this.dbg?.pointer('down', id, x, y, pos, lane, perf, e);
+    this.fingerOn(lane, perf);
+  }
+  touchMove(id, cx, cy, perf, e) {
+    const p = this.pointers.get(id);
+    if (!p || this.state !== 'playing') return;
+    [p.x, p.y] = this.toCanvas(cx, cy);
+    this.dbg?.pointer('move', id, p.x, p.y, this.lanePos(p.x, p.y), p.lane, perf, e);
+    this.trackFinger(p, perf);
+  }
+  touchUp(id, perf, cancel, e) {
+    const p = this.pointers.get(id);
+    if (!p) return;
+    this.pointers.delete(id);
+    this.dbg?.pointer(cancel ? 'cancel' : 'up', id, p.x, p.y, this.lanePos(p.x, p.y), p.lane, perf, e);
+    this.fingerOff(p.lane, perf);
+  }
+  fingerOn(lane, perf) { this.laneCount[lane]++; this.press(lane, perf); }
+  fingerOff(lane, perf) {
+    this.laneCount[lane] = Math.max(0, this.laneCount[lane] - 1);
+    if (!this.laneCount[lane]) this.release(lane, perf);
   }
 
-  // A finger already on `lane` moved to clientX: the lane it now counts for. It only switches once it is
-  // well inside the next lane (a resting finger wobbles across the boundary otherwise), and never while
-  // it is holding a hold note: drifting off would break the hold and "press" the neighbouring lane,
-  // eating that lane's next note as an early miss before the player gets to tap it.
-  laneAfterMove(lane, clientX) {
-    const h = this.holding[lane];
-    // a slide about to bend: the finger may slide over into the next lane
-    if (h && !(h.path && h.seg < h.path.length && (this.songTime ?? 0) >= h.path[h.seg].t - 300)) return lane;
-    const rect = this.canvas.getBoundingClientRect();
-    const x = (clientX - rect.left) / rect.width * this.W;
-    const pos = (x - this.fieldX) / this.laneW;           // lane centre at l + 0.5
-    return Math.abs(pos - (lane + 0.5)) < 0.5 + 0.25 ? lane : this.laneAt(clientX);
+  // A finger moved (or, on a slide, a frame went by): the lane it now counts for.
+  // Holding a hold note it stays on its lane: drifting off would break the hold and "press" the
+  // neighbouring lane, eating that lane's next note as an early miss. A slide is the exception: from
+  // SLIDE_EARLY before a bend, a finger that is in (or just short of) the lane it bends into carries it
+  // over. Checked every frame too, so a finger that got there early and stopped still takes it.
+  // A free finger only switches once well inside the next lane (a resting finger wobbles otherwise).
+  trackFinger(p, perf) {
+    if (this.state !== 'playing') return;
+    const pos = this.lanePos(p.x, p.y), h = this.holding[p.lane];
+    if (h) {
+      const b = h.path && h.seg < h.path.length ? h.path[h.seg] : null;
+      if (!b || this.holding[b.lane]) return;
+      const t = this.songAt(perf);
+      if (t < b.t - SLIDE_EARLY) return;
+      const into = b.lane > p.lane ? pos - b.lane : b.lane + 1 - pos;   // lanes past the boundary
+      if (into < -SLIDE_REACH) return;
+      const old = p.lane;
+      this.laneCount[old] = Math.max(0, this.laneCount[old] - 1);
+      this.keyDown[old] = this.laneCount[old] > 0;
+      p.lane = b.lane;
+      this.laneCount[b.lane]++;
+      this.keyDown[b.lane] = true;
+      this.beam[b.lane] = 1;
+      this.shiftSlide(h, b.lane, t, 'touch');
+      return;
+    }
+    if (Math.abs(pos - (p.lane + 0.5)) < 0.75) return;
+    const lane = this.laneOfPos(pos);
+    if (lane === p.lane) return;
+    const old = p.lane;
+    p.lane = lane;
+    this.fingerOff(old, perf);
+    this.fingerOn(lane, perf);
   }
 
   // pre-render glowing note heads (shadowBlur per frame is expensive and causes hitches).
@@ -306,6 +371,9 @@ export class Game {
     this.laneHead = [0, 0, 0, 0];
     this.holding = [null, null, null, null];
     this.floating = [];   // slides let go just before a bend: the next key may still pick them up
+    this.pointers.clear();
+    this.laneCount = [0, 0, 0, 0];
+    this.lastPress = [-1e9, -1e9, -1e9, -1e9];   // song time of each lane's last press (debug: why a miss)
     this.total = this.notes.length + this.notes.filter(n => n.end).length + this.notes.reduce((s, n) => s + (n.path?.length || 0), 0);
     this.buildScroll(speed);
 
@@ -340,6 +408,7 @@ export class Game {
     if (music.type === 'audio') this.audio.playBuffer(music.buffer, this.t0);
     else this.audio.playMidi(music.notes, this.t0, music.isGameNote);
 
+    this.dbg?.begin(this, { title, songId, difficulty });
     this.state = 'playing';
     this.lastFrame = performance.now();
     cancelAnimationFrame(this.raf);
@@ -385,6 +454,7 @@ export class Game {
     this.beam[lane] = 1;
     if (this.settings.hitsound > 0) this.audio.playTap();
     const t = this.songAt(perf);
+    this.lastPress[lane] = t;
     if (this.slideShift(lane, t)) return;
     const list = this.laneNotes[lane];
     for (let i = this.laneHead[lane]; i < list.length; i++) {
@@ -392,12 +462,14 @@ export class Game {
       if (n.state !== 0) continue;
       const diff = t - n.t; // + late, - early
       const k = n.sweep != null ? SWEEP_LENIENCY : 1;
-      if (diff < -WINDOWS.bad * k) return;              // too early: ignore the press
+      if (diff < -WINDOWS.bad * k) { this.dbg?.press(lane, t, 'idle'); return; }   // too early: ignore the press
       if (diff > WINDOWS.good * k) { this.miss(n); continue; }
-      if (diff < -WINDOWS.good * k) { this.miss(n, true); return; } // early "bad"
+      if (diff < -WINDOWS.good * k) { this.dbg?.press(lane, t, 'early'); this.miss(n, true); return; } // early "bad"
+      this.dbg?.press(lane, t, 'hit');
       this.hit(n, diff, k);
       return;
     }
+    this.dbg?.press(lane, t, 'idle');
   }
 
   // a key pressed near a holding slide's next bend, in the lane it bends into, takes the slide over
@@ -407,19 +479,28 @@ export class Game {
       const p = n.path[n.seg];
       if (p.lane !== lane || (this.holding[lane] && this.holding[lane] !== n)) continue;
       const diff = t - p.t;
-      if (diff < -(WINDOWS.good + 60) || diff > WINDOWS.good) continue;
-      if (this.holding[n.cur] === n) this.holding[n.cur] = null;
-      this.floating = this.floating.filter(x => x !== n);
-      const tier = TIERS.find(tr => Math.abs(diff) <= tr.win * 1.3) || TIERS[2];
-      this.award(tier, lane);
-      this.lastJudge = { tier, time: performance.now(), diff: null, lane };
-      this.effects.push({ type: 'shift', from: n.cur, to: lane, time: performance.now(), color: tier.color });
-      this.burst(lane, tier, true);
-      n.cur = lane; n.seg++;
-      this.holding[lane] = n;
+      if (diff < -SLIDE_EARLY || diff > WINDOWS.good) continue;
+      this.dbg?.press(lane, t, 'shift');
+      this.shiftSlide(n, lane, t, 'key');
       return true;
     }
     return false;
+  }
+
+  // the slide n moves on into `lane` (its next bend). Getting there early is fine; late costs.
+  shiftSlide(n, lane, t, how) {
+    const p = n.path[n.seg], diff = t - p.t;
+    if (this.holding[n.cur] === n) this.holding[n.cur] = null;
+    this.floating = this.floating.filter(x => x !== n);
+    const late = Math.max(0, diff);
+    const tier = TIERS.find(tr => late <= tr.win * 1.3) || TIERS[2];
+    this.dbg?.judge('shift', n, tier.key, diff, { how, from: n.cur, to: lane });
+    this.award(tier, lane);
+    this.lastJudge = { tier, time: performance.now(), diff: null, lane };
+    this.effects.push({ type: 'shift', from: n.cur, to: lane, time: performance.now(), color: tier.color });
+    this.burst(lane, tier, true);
+    n.cur = lane; n.seg++;
+    this.holding[lane] = n;
   }
 
   release(lane, perf) {
@@ -430,20 +511,21 @@ export class Game {
     this.holding[lane] = null;
     const t = this.songAt(perf);
     if (n.path && n.seg < n.path.length) {
-      // let go just before a bend (finger sliding over, or keys swapped in the wrong order): keep it alive
+      // let go just before a bend (lifted to re-tap, or keys swapped in the wrong order): keep it alive
       const p = n.path[n.seg];
-      if (t >= p.t - 260) { n.floatUntil = p.t + WINDOWS.good; this.floating.push(n); }
-      else this.breakHold(n, t);
+      if (t >= p.t - SLIDE_EARLY) { n.floatUntil = p.t + WINDOWS.good; this.floating.push(n); }
+      else this.breakHold(n, t, 'released');
       return;
     }
     if (t >= n.end - WINDOWS.good) this.finishHold(n);
-    else this.breakHold(n, t);
+    else this.breakHold(n, t, 'released');
   }
 
   // ---------- judging ----------
   hit(n, diff, k = 1) {
     const ad = Math.abs(diff) / k;
     const tier = TIERS.find(tr => ad <= tr.win) || TIERS[2];
+    this.dbg?.judge('hit', n, tier.key, diff);
     this.award(tier, n.lane);
     this.offsets.push(diff);
     this.meanErr = this.meanErr * 0.9 + diff * 0.1;
@@ -488,6 +570,7 @@ export class Game {
   }
 
   miss(n, early) {
+    this.dbg?.judge(early ? 'early' : 'miss', n, 'miss', null);
     n.state = 3;
     this.registerMiss(n.lane);
     if (n.end) { n.tail = 2; this.registerMiss(n.lane); }
@@ -507,13 +590,15 @@ export class Game {
   }
 
   finishHold(n) {
+    this.dbg?.judge('tail', n, 'perfect', null);
     n.state = 2; n.tail = 1;
     this.award(TIERS[0], n.lane);
     this.burst(n.lane, TIERS[0], true);
   }
 
   // released early: past the halfway point is a GOOD tail (combo kept), before it a miss
-  breakHold(n, t) {
+  breakHold(n, t, why) {
+    this.dbg?.judge('break', n, t >= n.t + (n.end - n.t) / 2 ? 'good' : 'miss', null, { why, seg: n.seg, bends: n.path?.length || 0 });
     n.state = 2; n.tail = 2;
     if (n.path) for (; n.seg < n.path.length; n.seg++) this.registerMiss(n.cur);   // bends never reached
     if (t >= n.t + (n.end - n.t) / 2) {
@@ -586,6 +671,9 @@ export class Game {
     const t = this.songAt(now);
     this.songTime = t;
 
+    // fingers resting on a slide: carry it over once its bend is near, even if they stopped moving
+    for (const p of this.pointers.values()) if (this.holding[p.lane]?.path) this.trackFinger(p, now);
+
     // auto-miss late notes, complete holds
     for (let l = 0; l < 4; l++) {
       const list = this.laneNotes[l];
@@ -599,12 +687,12 @@ export class Game {
       }
       const hn = this.holding[l];
       // a slide whose bend went by without the next key taking over
-      if (hn?.path && hn.seg < hn.path.length && t > hn.path[hn.seg].t + WINDOWS.good) { this.holding[l] = null; this.breakHold(hn, t); continue; }
+      if (hn?.path && hn.seg < hn.path.length && t > hn.path[hn.seg].t + WINDOWS.good) { this.holding[l] = null; this.breakHold(hn, t, 'bend-passed'); continue; }
       if (hn && t >= hn.end) { this.holding[l] = null; this.finishHold(hn); }
     }
     for (let i = this.floating.length - 1; i >= 0; i--) {
       const n = this.floating[i];
-      if (t > n.floatUntil) { this.floating.splice(i, 1); this.breakHold(n, t); }
+      if (t > n.floatUntil) { this.floating.splice(i, 1); this.breakHold(n, t, 'float-expired'); }
     }
     // passing a scroll-speed change: flash the neck and ring the strings
     while (this.markIdx < this.speedMarks.length && this.speedMarks[this.markIdx].t <= t) {
@@ -844,6 +932,7 @@ export class Game {
     this.char.drawMid(g, this, now, pulse);
     this.drawHUD(t, now, dt);
     this.char.drawFront(g, this, now);
+    this.dbg?.draw(g, this, t, now);
   }
 
   // outline of the neck between screen rows y0..y1 (wide screens)

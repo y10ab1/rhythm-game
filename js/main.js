@@ -9,6 +9,7 @@ import { analyzeAudio, ANALYZER_VERSION, ANALYSIS_SR } from './analyzer.js';
 import { parseMidi, midiToSong } from './midi.js';
 import { storage } from './storage.js';
 import { t, lang, setLang, applyI18n } from './i18n.js';
+import { DEBUG, DebugLog } from './debug.js';
 
 const API_BASE = 'https://rhythm-game-api.yabipeng.workers.dev';
 const DIFF_COLORS = { easy: '#5dffa8', normal: '#5ab8ff', hard: '#ffcb47', expert: '#ff4d5e' };
@@ -18,6 +19,7 @@ const $ = id => document.getElementById(id);
 const canvas = $('gameCanvas');
 const audio = new AudioEngine();
 const game = new Game(canvas, audio, { onEnd: showResults });
+if (DEBUG) { game.dbg = new DebugLog(); window.__game = game; }
 
 // ---------- settings ----------
 const DEFAULTS = {
@@ -430,6 +432,40 @@ $('btnQuit').addEventListener('click', quitGame);
 $('btnPauseRetry').addEventListener('click', () => { game.stop(); startSong(playing.song, playing.difficulty); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
+// ---------- debug log (?debug=1) ----------
+// sent to /debug-log on the page's own server (tools/debug-server.py); a download otherwise
+function showDebugUpload(r) {
+  const dbg = game.dbg;
+  dbg.finish(r);
+  let box = $('resDebug');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'resDebug';
+    box.className = 'res-offset';
+    $('resOffset').after(box);
+  }
+  box.innerHTML = '';
+  const status = document.createElement('span');
+  const s = dbg.stats;
+  status.textContent = `DEBUG：MISS 沒收到 ${s.missNoPress}／隔壁 ${s.missNeighbour}／時機 ${s.missOffTime}，跳點 ${s.jump}，取消 ${s.cancel} · 上傳中…`;
+  const dl = document.createElement('button');
+  dl.className = 'btn small';
+  dl.textContent = '下載紀錄';
+  const data = JSON.stringify(dbg.export());
+  const name = `debug-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+  dl.onclick = () => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  };
+  box.append(status, dl);
+  fetch('debug-log?name=' + encodeURIComponent(name), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: data })
+    .then(res => { if (!res.ok) throw new Error(res.status); status.textContent = status.textContent.replace('上傳中…', '已上傳 ✓'); })
+    .catch(() => { status.textContent = status.textContent.replace('上傳中…', '無法上傳，請按下載'); });
+}
+
 // ---------- results ----------
 let lastResult = null;
 function showResults(r) {
@@ -484,6 +520,7 @@ function showResults(r) {
     b.onclick = () => { settings.offset += m; saveSettings(); b.disabled = true; b.textContent = '✓'; };
     off.appendChild(b);
   }
+  if (game.dbg) showDebugUpload(r);
 
   const key = `${song.id}|${diff}`;
   if (!r.failed && (!bests[key] || r.score > bests[key].score)) {
@@ -836,34 +873,31 @@ window.addEventListener('keyup', e => {
   if (lane >= 0) game.release(lane, e.timeStamp);
 });
 
-// touch / mouse: one pointer per finger, sliding across lanes re-triggers
-const pointers = new Map();
-const laneCount = [0, 0, 0, 0];
-const pDown = (lane, t) => { laneCount[lane]++; game.press(lane, t); };
-const pUp = (lane, t) => { laneCount[lane] = Math.max(0, laneCount[lane] - 1); if (!laneCount[lane]) game.release(lane, t); };
+// touch / mouse: one pointer per finger (Game tracks lanes, slides and sliding across lanes)
+// The event's timeStamp is the more precise press time, but iOS Safari hands a second finger (and its
+// lift) the timeStamp of a finger already held down: debug logs showed taps stamped up to 700 ms in
+// the past, judged as far too early while a hold was being held. Normally a stamp arrives 15-33 ms old
+// (Safari delivers touches on frames); one older than STALE_MS is not believed, and the press is put
+// at its arrival time minus the usual delivery delay instead.
+const STALE_MS = 45;
+let usualAge = 20;
+const stampOf = e => {
+  const now = performance.now(), age = now - e.timeStamp;
+  if (e.timeStamp > 0 && age >= 0 && age < STALE_MS) {
+    usualAge += (age - usualAge) * 0.05;
+    return e.timeStamp;
+  }
+  return now - usualAge;
+};
 canvas.addEventListener('pointerdown', e => {
   if (game.state !== 'playing') return;
   e.preventDefault();
-  const lane = game.laneAt(e.clientX);
-  pointers.set(e.pointerId, lane);
   try { canvas.setPointerCapture(e.pointerId); } catch {}
-  pDown(lane, e.timeStamp);
+  game.touchDown(e.pointerId, e.clientX, e.clientY, stampOf(e), e);
 });
-canvas.addEventListener('pointermove', e => {
-  if (!pointers.has(e.pointerId) || game.state !== 'playing') return;
-  const old = pointers.get(e.pointerId), lane = game.laneAfterMove(old, e.clientX);
-  if (lane === old) return;
-  pointers.set(e.pointerId, lane);
-  pUp(old, e.timeStamp);
-  pDown(lane, e.timeStamp);
-});
-const pointerEnd = e => {
-  if (!pointers.has(e.pointerId)) return;
-  pUp(pointers.get(e.pointerId), e.timeStamp);
-  pointers.delete(e.pointerId);
-};
-canvas.addEventListener('pointerup', pointerEnd);
-canvas.addEventListener('pointercancel', pointerEnd);
+canvas.addEventListener('pointermove', e => game.touchMove(e.pointerId, e.clientX, e.clientY, stampOf(e), e));
+canvas.addEventListener('pointerup', e => game.touchUp(e.pointerId, stampOf(e), false, e));
+canvas.addEventListener('pointercancel', e => game.touchUp(e.pointerId, stampOf(e), true, e));
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
 window.addEventListener('resize', () => game.resize());

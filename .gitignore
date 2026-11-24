@@ -8,3 +8,4 @@ __pycache__/
 tools/.r2-sync.json
 site/.wrangler/
 node_modules/
+debug-logs/

@@ -12,3 +12,4 @@ tools
 assets
 node_modules
 __pycache__
+debug-logs
