@@ -24,7 +24,6 @@ const SONGS = [
   { id: 'pixel-quest', title: 'Pixel Quest', artist: 'Lyria 3.5', genre: 'Chiptune', file: 'pixel-quest.mp3', color: '#3dffe0' },
   { id: 'neon-riot', title: 'Neon Riot', artist: 'Lyria 3.5', genre: 'Pop-Punk / J-Rock', file: 'neon-riot.mp3', color: '#ff3d8a' },
   { id: 'hyper-circuit', title: 'Hyper Circuit', artist: 'Lyria 3.5', genre: 'Drum & Bass', file: 'hyper-circuit.mp3', color: '#ff5050' },
-  { id: 'fur-elise', title: 'Für Elise', artist: 'Beethoven', genre: 'Classical (MIDI)', file: 'fur_elise.mid', color: '#ff6fd8' },
 ];
 
 const out = [];

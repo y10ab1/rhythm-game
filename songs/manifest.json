@@ -328,34 +328,5 @@
         "notes": 869
       }
     }
-  },
-  {
-    "id": "fur-elise",
-    "title": "Für Elise",
-    "artist": "Beethoven",
-    "genre": "Classical (MIDI)",
-    "file": "fur_elise.mid",
-    "color": "#ff6fd8",
-    "kind": "midi",
-    "bpm": 156,
-    "duration": 105,
-    "levels": {
-      "easy": {
-        "level": 2,
-        "notes": 93
-      },
-      "normal": {
-        "level": 7,
-        "notes": 339
-      },
-      "hard": {
-        "level": 11,
-        "notes": 565
-      },
-      "expert": {
-        "level": 12,
-        "notes": 601
-      }
-    }
   }
 ]
