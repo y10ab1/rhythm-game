@@ -5,7 +5,7 @@ import { AudioEngine } from './audio.js';
 import { Game, LANE_COLORS, AUTOPLAY } from './game.js';
 import { resultArt } from './character.js';
 import { generateChart, DIFFICULTIES } from './chart.js';
-import { analyzeAudio, ANALYZER_VERSION, ANALYSIS_SR } from './analyzer.js';
+import { analyzeAudio, ANALYZER_VERSION, ANALYSIS_SR, previewStart, PREVIEW_LEN } from './analyzer.js';
 import { parseMidi, midiToSong } from './midi.js';
 import { storage } from './storage.js';
 import { t, lang, setLang, applyI18n } from './i18n.js';
@@ -49,6 +49,7 @@ const WIPE = new Set(['title>select', 'select>loading', 'loading>play', 'play>re
 let wipeTimer = 0;
 function show(name) {
   const from = screen;
+  if (name === 'select') { if (from !== 'select') startPreview(currentSong()); } else stopPreview();
   const apply = () => {
     screen = name;
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('show', s.id === name + 'Screen'));
@@ -79,6 +80,76 @@ function toast(msg, ms = 2600) {
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+// ---------- song preview ----------
+// The song select plays the highlighted song from its preview point (the manifest's `preview`, the loudest
+// stretch; uploads compute it from their analysis), PREVIEW_LEN s on a loop with fades. One <audio> element
+// streams the file (no full download / decode) and goes through the music bus, so the music volume applies.
+// play() is called inside the click that selected the song (mobile browsers need the gesture).
+const preview = { el: null, gain: null, id: null, start: 0, timer: 0, urls: new Map() };
+function previewEl() {
+  if (preview.el) return preview.el;
+  const el = new Audio();
+  el.preload = 'auto';
+  preview.el = el;
+  try {
+    audio.ensure();
+    const src = audio.ctx.createMediaElementSource(el);
+    preview.gain = audio.ctx.createGain();
+    preview.gain.gain.value = 0;
+    src.connect(preview.gain); preview.gain.connect(audio.musicBus);
+  } catch { preview.gain = null; }
+  // loop the preview window: fade out near its end, then jump back
+  el.addEventListener('timeupdate', () => {
+    if (!preview.id) return;
+    if (el.currentTime >= preview.start + PREVIEW_LEN) { preview.out = false; el.currentTime = preview.start; fadePreview(1, 0.8); }
+    else if (!preview.out && el.currentTime >= preview.start + PREVIEW_LEN - 1.2) { preview.out = true; fadePreview(0, 1.0); }
+  });
+  return el;
+}
+function fadePreview(to, sec) {
+  const g = preview.gain?.gain;
+  if (!g) { if (preview.el) preview.el.volume = to; return; }
+  const now = audio.ctx.currentTime;
+  g.cancelScheduledValues(now);
+  g.setValueAtTime(g.value, now);
+  g.linearRampToValueAtTime(to, now + sec);
+}
+async function previewSrc(song) {
+  if (song.builtin) return 'songs/' + song.file;
+  if (!preview.urls.has(song.id)) {
+    const rec = await storage.getSong(song.id).catch(() => null);
+    if (!rec?.data) return null;
+    preview.urls.set(song.id, URL.createObjectURL(new Blob([rec.data])));
+  }
+  return preview.urls.get(song.id);
+}
+function startPreview(song) {
+  if (!song || song.kind === 'midi') return stopPreview();
+  if (preview.id === song.id && preview.el && !preview.el.paused) return;
+  const el = previewEl();
+  preview.id = song.id;
+  preview.start = song.preview ?? previewStart(song.analysis);
+  preview.out = false;
+  clearTimeout(preview.timer);
+  fadePreview(0, 0.15);
+  const go = src => {
+    if (!src || preview.id !== song.id) return;
+    if (!el.src.endsWith(src)) el.src = src;
+    const seek = () => { el.currentTime = preview.start; };
+    if (el.readyState >= 1) seek(); else el.addEventListener('loadedmetadata', seek, { once: true });
+    el.play().then(() => { if (preview.id === song.id) fadePreview(1, 0.8); }).catch(() => {});
+  };
+  if (song.builtin) go('songs/' + song.file);   // synchronously, inside the click
+  else previewSrc(song).then(go);
+}
+function stopPreview() {
+  preview.id = null;
+  if (!preview.el || preview.el.paused) return;
+  fadePreview(0, 0.3);
+  clearTimeout(preview.timer);
+  preview.timer = setTimeout(() => { if (!preview.id) preview.el.pause(); }, 350);
 }
 
 // ---------- library ----------
@@ -154,6 +225,7 @@ function renderSongList() {
 
 function selectSong(id) {
   selectedId = id;
+  startPreview(currentSong());
   localStorage.setItem('rhythmSelected', id);
   document.querySelectorAll('.song-card').forEach(c => c.classList.remove('active'));
   renderSongList();
@@ -372,6 +444,8 @@ async function deleteUpload(song) {
   await storage.deleteSong(song.id).catch(() => {});
   songCache.delete(song.id);
   uploads = uploads.filter(u => u.id !== song.id);
+  if (preview.id === song.id) stopPreview();
+  if (preview.urls.has(song.id)) { URL.revokeObjectURL(preview.urls.get(song.id)); preview.urls.delete(song.id); }
   if (selectedId === song.id) selectedId = '';
   renderSongList();
 }

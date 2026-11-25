@@ -2,7 +2,7 @@
 // analyzer + chart generator the game uses, and stores display metadata
 // (BPM, length, note counts, level per difficulty).
 //   node tools/build_manifest.mjs
-import { analyzeAudio, ANALYSIS_SR } from '../js/analyzer.js';
+import { analyzeAudio, ANALYSIS_SR, previewStart } from '../js/analyzer.js';
 import { generateChart, DIFFICULTIES } from '../js/chart.js';
 import { parseMidi, midiToSong } from '../js/midi.js';
 import { execFileSync } from 'node:child_process';
@@ -14,12 +14,12 @@ const songsDir = path.join(root, 'songs');
 
 const SONGS = [
   { id: 'xingkong-de-guitu', title: '星空的歸途', artist: '孤夜 Gouya', genre: 'Original · Luci', file: 'xingkong-de-guitu.mp3', color: '#8fa8ff' },
+  { id: 'skyline-run', title: 'Skyline Run', artist: 'Lyria 3.5', genre: 'Nu-Disco', file: 'skyline-run.mp3', color: '#50ff78' },
+  { id: 'starlight-stage', title: 'Starlight Stage', artist: 'Lyria 3.5', genre: 'K-Pop Dance', file: 'starlight-stage.mp3', color: '#ffd6f0' },
   { id: 'neon-drift', title: 'Neon Drift', artist: 'Lyria 3.5', genre: 'Synthwave', file: 'neon-drift.mp3', color: '#50b4ff' },
   { id: 'fiesta-caliente', title: 'Fiesta Caliente', artist: 'Lyria 3.5', genre: 'Reggaeton', file: 'fiesta-caliente.mp3', color: '#ff8a3d' },
   { id: 'sunset-boulevard', title: 'Sunset Boulevard', artist: 'Lyria 3.5', genre: 'City Pop', file: 'sunset-boulevard.mp3', color: '#ff7eb6' },
   { id: 'groove-machine', title: 'Groove Machine', artist: 'Lyria 3.5', genre: 'Funk / Disco', file: 'groove-machine.mp3', color: '#c38bff' },
-  { id: 'skyline-run', title: 'Skyline Run', artist: 'Lyria 3.5', genre: 'Nu-Disco', file: 'skyline-run.mp3', color: '#50ff78' },
-  { id: 'starlight-stage', title: 'Starlight Stage', artist: 'Lyria 3.5', genre: 'K-Pop Dance', file: 'starlight-stage.mp3', color: '#ffd6f0' },
   { id: 'voltage-rush', title: 'Voltage Rush', artist: 'Lyria 3.5', genre: 'Electro House', file: 'voltage-rush.mp3', color: '#ffc832' },
   { id: 'pixel-quest', title: 'Pixel Quest', artist: 'Lyria 3.5', genre: 'Chiptune', file: 'pixel-quest.mp3', color: '#3dffe0' },
   { id: 'neon-riot', title: 'Neon Riot', artist: 'Lyria 3.5', genre: 'Pop-Punk / J-Rock', file: 'neon-riot.mp3', color: '#ff3d8a' },
@@ -46,7 +46,7 @@ for (const s of SONGS) {
     const { stats } = generateChart(an, d);
     levels[d] = { level: stats.level, notes: stats.count };
   }
-  const entry = { ...s, kind: s.file.endsWith('.mid') ? 'midi' : 'audio', ...(hasLead ? { lead: leadFile } : {}), bpm: Math.round(an.bpm), duration: Math.round(an.duration), levels };
+  const entry = { ...s, kind: s.file.endsWith('.mid') ? 'midi' : 'audio', ...(hasLead ? { lead: leadFile } : {}), bpm: Math.round(an.bpm), duration: Math.round(an.duration), preview: previewStart(an), levels };
   console.log(entry.title, entry.bpm, entry.duration, JSON.stringify(levels));
   out.push(entry);
 }

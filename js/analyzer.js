@@ -461,3 +461,27 @@ export async function analyzeAudio(samples, sr = ANALYSIS_SR, onProgress, opts =
     env,
   };
 }
+
+// ---- song preview: where the song select starts playing it. The loudest PREVIEW_LEN seconds (usually the
+// chorus), not in the intro or the last seconds, starting on a bar's downbeat.
+export const PREVIEW_LEN = 15;
+export function previewStart(an) {
+  const db = an?.env?.db, fps = an?.env?.fps, dur = an?.duration || 0;
+  if (!db?.length || dur < PREVIEW_LEN + 10) return Math.max(0, Math.min(dur * 0.3, dur - PREVIEW_LEN));
+  const w = Math.round(PREVIEW_LEN * fps);
+  const lo = Math.round(Math.min(dur * 0.15, 20) * fps), hi = Math.min(db.length, Math.round((dur - 3) * fps)) - w;
+  let sum = 0, best = -Infinity, at = lo;
+  for (let i = lo; i < lo + w; i++) sum += db[i];
+  for (let i = lo; i <= hi; i++) {
+    // ties (a long flat chorus) keep the earliest: the chorus' start
+    if (sum > best + 0.5 * w) { best = sum; at = i; }
+    if (i + w < db.length) sum += db[i + w] - db[i];
+  }
+  let t = at / fps;
+  // snap back to the nearest bar downbeat at or before it (within 4 s)
+  const beats = an.beats || [];
+  const bars = beats.filter((_, k) => ((k - (an.downbeat || 0)) % 4 + 4) % 4 === 0);
+  const bar = bars.filter(b => b <= t + 0.05 && b >= t - 4).pop();
+  if (bar != null) t = bar;
+  return +Math.max(0, t).toFixed(2);
+}

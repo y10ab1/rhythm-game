@@ -10,6 +10,7 @@
     "lead": "xingkong-de-guitu.lead.json",
     "bpm": 95,
     "duration": 205,
+    "preview": 29.23,
     "levels": {
       "easy": {
         "level": 2,
@@ -30,126 +31,6 @@
     }
   },
   {
-    "id": "neon-drift",
-    "title": "Neon Drift",
-    "artist": "Lyria 3.5",
-    "genre": "Synthwave",
-    "file": "neon-drift.mp3",
-    "color": "#50b4ff",
-    "kind": "audio",
-    "lead": "neon-drift.lead.json",
-    "bpm": 90,
-    "duration": 105,
-    "levels": {
-      "easy": {
-        "level": 2,
-        "notes": 123
-      },
-      "normal": {
-        "level": 5,
-        "notes": 238
-      },
-      "hard": {
-        "level": 8,
-        "notes": 406
-      },
-      "expert": {
-        "level": 9,
-        "notes": 431
-      }
-    }
-  },
-  {
-    "id": "fiesta-caliente",
-    "title": "Fiesta Caliente",
-    "artist": "Lyria 3.5",
-    "genre": "Reggaeton",
-    "file": "fiesta-caliente.mp3",
-    "color": "#ff8a3d",
-    "kind": "audio",
-    "lead": "fiesta-caliente.lead.json",
-    "bpm": 92,
-    "duration": 106,
-    "levels": {
-      "easy": {
-        "level": 2,
-        "notes": 127
-      },
-      "normal": {
-        "level": 5,
-        "notes": 245
-      },
-      "hard": {
-        "level": 8,
-        "notes": 416
-      },
-      "expert": {
-        "level": 12,
-        "notes": 596
-      }
-    }
-  },
-  {
-    "id": "sunset-boulevard",
-    "title": "Sunset Boulevard",
-    "artist": "Lyria 3.5",
-    "genre": "City Pop",
-    "file": "sunset-boulevard.mp3",
-    "color": "#ff7eb6",
-    "kind": "audio",
-    "lead": "sunset-boulevard.lead.json",
-    "bpm": 105,
-    "duration": 111,
-    "levels": {
-      "easy": {
-        "level": 3,
-        "notes": 139
-      },
-      "normal": {
-        "level": 5,
-        "notes": 269
-      },
-      "hard": {
-        "level": 9,
-        "notes": 453
-      },
-      "expert": {
-        "level": 12,
-        "notes": 574
-      }
-    }
-  },
-  {
-    "id": "groove-machine",
-    "title": "Groove Machine",
-    "artist": "Lyria 3.5",
-    "genre": "Funk / Disco",
-    "file": "groove-machine.mp3",
-    "color": "#c38bff",
-    "kind": "audio",
-    "lead": "groove-machine.lead.json",
-    "bpm": 112,
-    "duration": 125,
-    "levels": {
-      "easy": {
-        "level": 3,
-        "notes": 176
-      },
-      "normal": {
-        "level": 6,
-        "notes": 325
-      },
-      "hard": {
-        "level": 9,
-        "notes": 534
-      },
-      "expert": {
-        "level": 13,
-        "notes": 713
-      }
-    }
-  },
-  {
     "id": "skyline-run",
     "title": "Skyline Run",
     "artist": "Lyria 3.5",
@@ -160,6 +41,7 @@
     "lead": "skyline-run.lead.json",
     "bpm": 118,
     "duration": 152,
+    "preview": 113.47,
     "levels": {
       "easy": {
         "level": 3,
@@ -190,6 +72,7 @@
     "lead": "starlight-stage.lead.json",
     "bpm": 125,
     "duration": 126,
+    "preview": 38.53,
     "levels": {
       "easy": {
         "level": 3,
@@ -210,6 +93,130 @@
     }
   },
   {
+    "id": "neon-drift",
+    "title": "Neon Drift",
+    "artist": "Lyria 3.5",
+    "genre": "Synthwave",
+    "file": "neon-drift.mp3",
+    "color": "#50b4ff",
+    "kind": "audio",
+    "lead": "neon-drift.lead.json",
+    "bpm": 90,
+    "duration": 105,
+    "preview": 24.29,
+    "levels": {
+      "easy": {
+        "level": 2,
+        "notes": 123
+      },
+      "normal": {
+        "level": 5,
+        "notes": 238
+      },
+      "hard": {
+        "level": 8,
+        "notes": 406
+      },
+      "expert": {
+        "level": 9,
+        "notes": 431
+      }
+    }
+  },
+  {
+    "id": "fiesta-caliente",
+    "title": "Fiesta Caliente",
+    "artist": "Lyria 3.5",
+    "genre": "Reggaeton",
+    "file": "fiesta-caliente.mp3",
+    "color": "#ff8a3d",
+    "kind": "audio",
+    "lead": "fiesta-caliente.lead.json",
+    "bpm": 92,
+    "duration": 106,
+    "preview": 30.76,
+    "levels": {
+      "easy": {
+        "level": 2,
+        "notes": 127
+      },
+      "normal": {
+        "level": 5,
+        "notes": 245
+      },
+      "hard": {
+        "level": 8,
+        "notes": 416
+      },
+      "expert": {
+        "level": 12,
+        "notes": 596
+      }
+    }
+  },
+  {
+    "id": "sunset-boulevard",
+    "title": "Sunset Boulevard",
+    "artist": "Lyria 3.5",
+    "genre": "City Pop",
+    "file": "sunset-boulevard.mp3",
+    "color": "#ff7eb6",
+    "kind": "audio",
+    "lead": "sunset-boulevard.lead.json",
+    "bpm": 105,
+    "duration": 111,
+    "preview": 49.78,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 139
+      },
+      "normal": {
+        "level": 5,
+        "notes": 269
+      },
+      "hard": {
+        "level": 9,
+        "notes": 453
+      },
+      "expert": {
+        "level": 12,
+        "notes": 574
+      }
+    }
+  },
+  {
+    "id": "groove-machine",
+    "title": "Groove Machine",
+    "artist": "Lyria 3.5",
+    "genre": "Funk / Disco",
+    "file": "groove-machine.mp3",
+    "color": "#c38bff",
+    "kind": "audio",
+    "lead": "groove-machine.lead.json",
+    "bpm": 112,
+    "duration": 125,
+    "preview": 57.15,
+    "levels": {
+      "easy": {
+        "level": 3,
+        "notes": 176
+      },
+      "normal": {
+        "level": 6,
+        "notes": 325
+      },
+      "hard": {
+        "level": 9,
+        "notes": 534
+      },
+      "expert": {
+        "level": 13,
+        "notes": 713
+      }
+    }
+  },
+  {
     "id": "voltage-rush",
     "title": "Voltage Rush",
     "artist": "Lyria 3.5",
@@ -220,6 +227,7 @@
     "lead": "voltage-rush.lead.json",
     "bpm": 144,
     "duration": 108,
+    "preview": 76.34,
     "levels": {
       "easy": {
         "level": 3,
@@ -250,6 +258,7 @@
     "lead": "pixel-quest.lead.json",
     "bpm": 150,
     "duration": 106,
+    "preview": 86.91,
     "levels": {
       "easy": {
         "level": 3,
@@ -280,6 +289,7 @@
     "lead": "neon-riot.lead.json",
     "bpm": 160,
     "duration": 101,
+    "preview": 58.4,
     "levels": {
       "easy": {
         "level": 2,
@@ -310,6 +320,7 @@
     "lead": "hyper-circuit.lead.json",
     "bpm": 175,
     "duration": 137,
+    "preview": 21.31,
     "levels": {
       "easy": {
         "level": 2,
