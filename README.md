@@ -39,12 +39,13 @@ js/main.js            menus, library, uploads, settings, calibration, leaderboar
 js/game.js            gameplay: clock, judging, rendering
 js/audio.js           Web Audio engine (latency-aware clock, hit sounds, music, MIDI synth)
 js/analyzer.js        beat / onset detection (pure JS, runs in a Worker and in Node)
-js/chart.js           chart generation per difficulty
+js/chart.js           chart generation per difficulty (follows the lead melody when there is one)
+js/lead.js            in-browser lead-melody estimate for uploaded songs (predominant pitch tracking)
 js/midi.js            MIDI parser
 js/storage.js         IndexedDB for uploaded songs + analysis cache
 js/character.js       孤夜, her robots, per-song MV player, FEVER cut-in
 js/i18n.js            UI language (中文 / 日本語): strings, character lines, font stack
-songs/                built-in songs + manifest.json
+songs/                built-in songs + manifest.json; <id>.lead.json = offline lead-melody transcription
 assets/guye/          character art, robot sprite sheets; mv/ = per-song MV clips + manifest.json
 tools/                Lyria + MV generation, manifest build, analyzer tests
 ```
@@ -69,7 +70,11 @@ W=2560 H=1440 FLAGS="mocap=xingkong-de-guitu_aist&frame=center" node tools/dance
 W=1080 H=1920 FLAGS="mocap=xingkong-de-guitu_aist&frame=portrait" node tools/dance/render.mjs game xingkong-de-guitu
 python3 tools/dance/export_game.py xingkong-de-guitu    # -> assets/guye/mv/ + manifest, then tools/sync_assets.py
 
-# rebuild songs/manifest.json (BPM, length, levels) — needs ffmpeg
+# lead melody of the built-in songs -> songs/<id>.lead.json (Demucs stems + basic-pitch, GPU; setup in the
+# script's docstring, a venv at ~/.venvs/lead). --preview also writes /tmp/lead-preview/<id>.wav (song + sine lead)
+~/.venvs/lead/bin/python tools/lead/extract_lead.py            # or: <song_id ...> [--preview]
+
+# rebuild songs/manifest.json (BPM, length, levels; picks up songs/<id>.lead.json) — needs ffmpeg
 node tools/build_manifest.mjs
 
 # beat-detection accuracy test (synthetic drums, or real files)

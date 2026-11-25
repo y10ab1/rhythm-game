@@ -10,6 +10,8 @@ const LANE_RGB = [[255, 90, 110], [79, 180, 255], [79, 255, 160], [255, 203, 71]
 const rgba = (lane, a) => `rgba(${LANE_RGB[lane][0]},${LANE_RGB[lane][1]},${LANE_RGB[lane][2]},${a})`;
 
 // Judgement windows (ms, +/-)
+// ?auto=1 plays the chart by itself (scores are not submitted)
+export const AUTOPLAY = typeof location !== 'undefined' && new URLSearchParams(location.search).get('auto') === '1';
 export const WINDOWS = { perfect: 42, great: 85, good: 130, bad: 165 };
 const SWEEP_LENIENCY = 1.3;   // sweep steps are judged with windows this much wider
 // slides are about where the finger is, not when it crosses a line: from SLIDE_EARLY ms before a bend
@@ -674,6 +676,8 @@ export class Game {
     // fingers resting on a slide: carry it over once its bend is near, even if they stopped moving
     for (const p of this.pointers.values()) if (this.holding[p.lane]?.path) this.trackFinger(p, now);
 
+    if (AUTOPLAY) this.autoPlay(t);
+
     // auto-miss late notes, complete holds
     for (let l = 0; l < 4; l++) {
       const list = this.laneNotes[l];
@@ -707,6 +711,21 @@ export class Game {
 
     this.render(t, now, dt);
     this.raf = requestAnimationFrame(this.loop);
+  }
+
+  // ?auto=1: every note hit dead on time, holds held, slides followed (for watching a chart)
+  autoPlay(t) {
+    for (let l = 0; l < 4; l++) {
+      const list = this.laneNotes[l];
+      for (let i = this.laneHead[l]; i < list.length; i++) {
+        const n = list[i];
+        if (n.t > t) break;
+        if (n.state === 0) { this.beam[l] = 1; this.hit(n, 0); }
+      }
+    }
+    for (const n of [...this.holding]) {
+      if (n?.path && n.seg < n.path.length && n.path[n.seg].t <= t) { this.beam[n.path[n.seg].lane] = 1; this.shiftSlide(n, n.path[n.seg].lane, t, 'auto'); }
+    }
   }
 
   finish(failed) {

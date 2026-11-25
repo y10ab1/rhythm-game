@@ -14,6 +14,7 @@ for (const s of manifest) {
   } else {
     const pcm = execFileSync('ffmpeg', ['-v', 'error', '-i', 'songs/' + s.file, '-ac', '1', '-ar', String(ANALYSIS_SR), '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
     an = await analyzeAudio(new Float32Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / 4), ANALYSIS_SR);
+    if (s.lead && fs.existsSync('songs/' + s.lead)) an.lead = JSON.parse(fs.readFileSync('songs/' + s.lead, 'utf8'));
   }
   for (const d of DIFFICULTIES) {
     const { notes, stats } = generateChart(an, d);

@@ -2,7 +2,7 @@
 //  App shell: menus, library, uploads, settings, calibration
 // ============================================================
 import { AudioEngine } from './audio.js';
-import { Game, LANE_COLORS } from './game.js';
+import { Game, LANE_COLORS, AUTOPLAY } from './game.js';
 import { resultArt } from './character.js';
 import { generateChart, DIFFICULTIES } from './chart.js';
 import { analyzeAudio, ANALYZER_VERSION, ANALYSIS_SR } from './analyzer.js';
@@ -241,7 +241,10 @@ async function fetchWithProgress(url, onP) {
   return out.buffer;
 }
 
-async function runAnalysis(buffer, onP) {
+// ?lead=0: charts ignore the lead melody (to compare with the onset-only charts)
+const NO_LEAD = new URLSearchParams(location.search).get('lead') === '0';
+// opts.lead: estimate the lead melody too (uploads; built-in songs ship an offline transcription)
+async function runAnalysis(buffer, onP, opts = {}) {
   const pcm = new Float32Array(await audio.analysisPCM(buffer));
   try {
     return await new Promise((resolve, reject) => {
@@ -252,11 +255,11 @@ async function runAnalysis(buffer, onP) {
         else if (e.data.error) { w.terminate(); reject(new Error(e.data.error)); }
       };
       w.onerror = err => { w.terminate(); reject(err); };
-      w.postMessage({ samples: pcm, sr: ANALYSIS_SR });
+      w.postMessage({ samples: pcm, sr: ANALYSIS_SR, opts });
     });
   } catch (err) {
     console.warn('Worker analysis failed, running on main thread', err);
-    return await analyzeAudio(pcm, ANALYSIS_SR, onP);
+    return await analyzeAudio(pcm, ANALYSIS_SR, onP, opts);
   }
 }
 
@@ -276,9 +279,15 @@ async function prepare(song) {
     const key = `analysis:${song.id}:${ANALYZER_VERSION}`;
     let analysis = song.builtin ? await storage.cacheGet(key) : (rec.analysis?.version === ANALYZER_VERSION ? rec.analysis : null);
     if (!analysis) {
-      analysis = await runAnalysis(buffer, p => setLoading(song.title, 0.5 + p * 0.5, t('load.beats')));
+      analysis = await runAnalysis(buffer, p => setLoading(song.title, 0.5 + p * 0.5, t('load.beats')), { lead: !song.builtin && !NO_LEAD });
       if (song.builtin) storage.cachePut(key, analysis);
       else { rec.analysis = analysis; rec.levels = levelsFor(analysis); rec.bpm = Math.round(analysis.bpm); storage.putSong(rec); }
+    }
+    // built-in songs ship a lead melody transcribed offline (tools/lead/extract_lead.py); it replaces the
+    // analyzer's own in-browser estimate
+    if (song.builtin && song.lead && !NO_LEAD) {
+      const lead = await fetch('songs/' + song.lead).then(r => (r.ok ? r.json() : null)).catch(() => null);
+      if (lead?.notes) analysis = { ...analysis, lead };
     }
     entry = { analysis, buffer };
   }
@@ -317,7 +326,7 @@ async function addFiles(files) {
         setLoading(title, 0.05, t('load.decode'));
         const buffer = await audio.decode(data);
         if (buffer.duration < 10) throw new Error(t('err.short'));
-        analysis = await runAnalysis(buffer, p => setLoading(title, 0.1 + p * 0.9, t('load.beats')));
+        analysis = await runAnalysis(buffer, p => setLoading(title, 0.1 + p * 0.9, t('load.beats')), { lead: !NO_LEAD });
         songCache.set(id, { analysis, buffer });
         rec.analysis = analysis;
       }
@@ -523,7 +532,7 @@ function showResults(r) {
   if (game.dbg) showDebugUpload(r);
 
   const key = `${song.id}|${diff}`;
-  if (!r.failed && (!bests[key] || r.score > bests[key].score)) {
+  if (!AUTOPLAY && !r.failed && (!bests[key] || r.score > bests[key].score)) {
     bests[key] = { score: r.score, rank: r.rank, color: r.color, acc: r.accuracy };
     localStorage.setItem('rhythmBest', JSON.stringify(bests));
   }
@@ -539,7 +548,8 @@ function showResults(r) {
   $('submitStatus').textContent = r.failed ? t('res.failedNoSubmit') : '';
   $('playerName').value = playerName();
   nameSubmitted = '';
-  if (!r.failed && settings.autoSubmit) submitScore(true);
+  if (AUTOPLAY) { $('btnSubmit').disabled = true; $('submitStatus').textContent = 'AUTO'; }
+  else if (!r.failed && settings.autoSubmit) submitScore(true);
 }
 function countUp(el, to, ms, delay = 380) {
   const t0 = performance.now() + delay;

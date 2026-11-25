@@ -7,20 +7,21 @@
     "file": "xingkong-de-guitu.mp3",
     "color": "#8fa8ff",
     "kind": "audio",
+    "lead": "xingkong-de-guitu.lead.json",
     "bpm": 95,
     "duration": 205,
     "levels": {
       "easy": {
         "level": 2,
-        "notes": 260
+        "notes": 258
       },
       "normal": {
         "level": 5,
-        "notes": 490
+        "notes": 488
       },
       "hard": {
         "level": 8,
-        "notes": 806
+        "notes": 803
       },
       "expert": {
         "level": 11,
@@ -36,12 +37,13 @@
     "file": "neon-drift.mp3",
     "color": "#50b4ff",
     "kind": "audio",
+    "lead": "neon-drift.lead.json",
     "bpm": 90,
     "duration": 105,
     "levels": {
       "easy": {
         "level": 2,
-        "notes": 125
+        "notes": 123
       },
       "normal": {
         "level": 5,
@@ -49,11 +51,11 @@
       },
       "hard": {
         "level": 8,
-        "notes": 402
+        "notes": 406
       },
       "expert": {
         "level": 9,
-        "notes": 418
+        "notes": 431
       }
     }
   },
@@ -65,24 +67,25 @@
     "file": "fiesta-caliente.mp3",
     "color": "#ff8a3d",
     "kind": "audio",
+    "lead": "fiesta-caliente.lead.json",
     "bpm": 92,
     "duration": 106,
     "levels": {
       "easy": {
         "level": 2,
-        "notes": 129
+        "notes": 127
       },
       "normal": {
         "level": 5,
-        "notes": 246
+        "notes": 245
       },
       "hard": {
         "level": 8,
-        "notes": 418
+        "notes": 416
       },
       "expert": {
         "level": 12,
-        "notes": 590
+        "notes": 596
       }
     }
   },
@@ -94,12 +97,13 @@
     "file": "sunset-boulevard.mp3",
     "color": "#ff7eb6",
     "kind": "audio",
+    "lead": "sunset-boulevard.lead.json",
     "bpm": 105,
     "duration": 111,
     "levels": {
       "easy": {
         "level": 3,
-        "notes": 140
+        "notes": 139
       },
       "normal": {
         "level": 5,
@@ -107,11 +111,11 @@
       },
       "hard": {
         "level": 9,
-        "notes": 448
+        "notes": 453
       },
       "expert": {
         "level": 12,
-        "notes": 572
+        "notes": 574
       }
     }
   },
@@ -123,16 +127,17 @@
     "file": "groove-machine.mp3",
     "color": "#c38bff",
     "kind": "audio",
+    "lead": "groove-machine.lead.json",
     "bpm": 112,
     "duration": 125,
     "levels": {
       "easy": {
         "level": 3,
-        "notes": 182
+        "notes": 176
       },
       "normal": {
         "level": 6,
-        "notes": 330
+        "notes": 325
       },
       "hard": {
         "level": 9,
@@ -140,7 +145,7 @@
       },
       "expert": {
         "level": 13,
-        "notes": 721
+        "notes": 713
       }
     }
   },
@@ -152,24 +157,25 @@
     "file": "skyline-run.mp3",
     "color": "#50ff78",
     "kind": "audio",
+    "lead": "skyline-run.lead.json",
     "bpm": 118,
     "duration": 152,
     "levels": {
       "easy": {
         "level": 3,
-        "notes": 221
+        "notes": 216
       },
       "normal": {
         "level": 6,
-        "notes": 407
+        "notes": 425
       },
       "hard": {
         "level": 10,
-        "notes": 685
+        "notes": 689
       },
       "expert": {
         "level": 12,
-        "notes": 795
+        "notes": 801
       }
     }
   },
@@ -181,6 +187,7 @@
     "file": "starlight-stage.mp3",
     "color": "#ffd6f0",
     "kind": "audio",
+    "lead": "starlight-stage.lead.json",
     "bpm": 125,
     "duration": 126,
     "levels": {
@@ -190,15 +197,15 @@
       },
       "normal": {
         "level": 6,
-        "notes": 354
+        "notes": 352
       },
       "hard": {
         "level": 8,
-        "notes": 485
+        "notes": 491
       },
       "expert": {
         "level": 12,
-        "notes": 718
+        "notes": 713
       }
     }
   },
@@ -210,24 +217,25 @@
     "file": "voltage-rush.mp3",
     "color": "#ffc832",
     "kind": "audio",
+    "lead": "voltage-rush.lead.json",
     "bpm": 144,
     "duration": 108,
     "levels": {
       "easy": {
         "level": 3,
-        "notes": 182
+        "notes": 184
       },
       "normal": {
-        "level": 8,
-        "notes": 332
+        "level": 7,
+        "notes": 336
       },
       "hard": {
         "level": 10,
-        "notes": 476
+        "notes": 483
       },
       "expert": {
         "level": 12,
-        "notes": 606
+        "notes": 617
       }
     }
   },
@@ -239,24 +247,25 @@
     "file": "pixel-quest.mp3",
     "color": "#3dffe0",
     "kind": "audio",
+    "lead": "pixel-quest.lead.json",
     "bpm": 150,
     "duration": 106,
     "levels": {
       "easy": {
         "level": 3,
-        "notes": 172
+        "notes": 170
       },
       "normal": {
         "level": 7,
-        "notes": 328
+        "notes": 388
       },
       "hard": {
         "level": 10,
-        "notes": 505
+        "notes": 507
       },
       "expert": {
-        "level": 12,
-        "notes": 620
+        "level": 13,
+        "notes": 615
       }
     }
   },
@@ -268,24 +277,25 @@
     "file": "neon-riot.mp3",
     "color": "#ff3d8a",
     "kind": "audio",
+    "lead": "neon-riot.lead.json",
     "bpm": 160,
     "duration": 101,
     "levels": {
       "easy": {
         "level": 2,
-        "notes": 108
+        "notes": 106
       },
       "normal": {
-        "level": 5,
-        "notes": 233
+        "level": 8,
+        "notes": 376
       },
       "hard": {
         "level": 10,
-        "notes": 482
+        "notes": 480
       },
       "expert": {
         "level": 12,
-        "notes": 591
+        "notes": 584
       }
     }
   },
@@ -297,24 +307,25 @@
     "file": "hyper-circuit.mp3",
     "color": "#ff5050",
     "kind": "audio",
+    "lead": "hyper-circuit.lead.json",
     "bpm": 175,
     "duration": 137,
     "levels": {
       "easy": {
         "level": 2,
-        "notes": 161
+        "notes": 160
       },
       "normal": {
-        "level": 5,
-        "notes": 343
+        "level": 8,
+        "notes": 509
       },
       "hard": {
         "level": 11,
-        "notes": 732
+        "notes": 739
       },
       "expert": {
         "level": 13,
-        "notes": 864
+        "notes": 869
       }
     }
   },
@@ -334,8 +345,8 @@
         "notes": 93
       },
       "normal": {
-        "level": 5,
-        "notes": 270
+        "level": 7,
+        "notes": 339
       },
       "hard": {
         "level": 11,

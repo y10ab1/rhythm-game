@@ -38,12 +38,16 @@ for (const s of SONGS) {
     const pcm = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', String(ANALYSIS_SR), '-f', 'f32le', '-'], { maxBuffer: 1 << 30 });
     an = await analyzeAudio(new Float32Array(pcm.buffer, pcm.byteOffset, pcm.byteLength / 4), ANALYSIS_SR);
   }
+  // lead melody from tools/lead/extract_lead.py, when it has been run for this song
+  const leadFile = `${s.id}.lead.json`;
+  const hasLead = fs.existsSync(path.join(songsDir, leadFile));
+  if (hasLead) an.lead = JSON.parse(fs.readFileSync(path.join(songsDir, leadFile), 'utf8'));
   const levels = {};
   for (const d of DIFFICULTIES) {
     const { stats } = generateChart(an, d);
     levels[d] = { level: stats.level, notes: stats.count };
   }
-  const entry = { ...s, kind: s.file.endsWith('.mid') ? 'midi' : 'audio', bpm: Math.round(an.bpm), duration: Math.round(an.duration), levels };
+  const entry = { ...s, kind: s.file.endsWith('.mid') ? 'midi' : 'audio', ...(hasLead ? { lead: leadFile } : {}), bpm: Math.round(an.bpm), duration: Math.round(an.duration), levels };
   console.log(entry.title, entry.bpm, entry.duration, JSON.stringify(levels));
   out.push(entry);
 }

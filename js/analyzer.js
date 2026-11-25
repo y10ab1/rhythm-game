@@ -3,7 +3,10 @@
 //  Pure functions, no DOM. Used by the browser (worker) and Node tools.
 // ============================================================
 
-export const ANALYZER_VERSION = 5;
+import { estimateLead } from './lead.js';
+
+// 6: uploads carry an estimated lead melody (analysis.lead)
+export const ANALYZER_VERSION = 7;
 export const ANALYSIS_SR = 22050;
 
 const N = 1024;   // FFT size (46 ms @ 22.05 kHz)
@@ -250,7 +253,14 @@ function fitGrid(odfS, bpm0, fps) {
 // ============================================================
 //  Main entry
 // ============================================================
-export async function analyzeAudio(samples, sr = ANALYSIS_SR, onProgress) {
+// opts.lead: also estimate the lead melody (js/lead.js) for songs that have no offline transcription
+export async function analyzeAudio(samples, sr = ANALYSIS_SR, onProgress, opts = {}) {
+  if (opts.lead) {
+    const p = onProgress;
+    const base = await analyzeAudio(samples, sr, p && (x => p(x * 0.75)));
+    const lead = await estimateLead(samples, sr, base.onsets.t, p && (x => p(0.75 + x * 0.25)));
+    return { ...base, lead };
+  }
   const fps = sr / HOP;
   const duration = samples.length / sr;
   const feat = await computeFeatures(samples, sr, onProgress);
@@ -427,6 +437,17 @@ export async function analyzeAudio(samples, sr = ANALYSIS_SR, onProgress) {
     if (s > bestDb) { bestDb = s; downbeat = o; }
   }
 
+  // ---- loudness: 20 per second, dB relative to the track's median level (the chart drops a reverb tail) ----
+  const ENV_FPS = 20, per = Math.max(1, Math.round(fps / ENV_FPS));
+  const envRaw = [];
+  for (let i = 0; i < nFrames; i += per) {
+    let m = -200;
+    for (let j = i; j < Math.min(nFrames, i + per); j++) m = Math.max(m, feat.energyAll[j]);
+    envRaw.push(m);
+  }
+  const envMed = median(envRaw.filter(v => v > loud - 60));
+  const env = { fps: fps / per, db: envRaw.map(v => Math.max(-99, Math.round(v - envMed))) };
+
   if (onProgress) onProgress(1);
   return {
     version: ANALYZER_VERSION,
@@ -437,5 +458,6 @@ export async function analyzeAudio(samples, sr = ANALYSIS_SR, onProgress) {
     beats,
     downbeat,
     onsets,
+    env,
   };
 }

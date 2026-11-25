@@ -8,10 +8,15 @@ const CONFIG = {
   //          max metric level, target notes/sec @120bpm, min gap (s), chord rate, hold rate, same-lane gap, same-hand gap
   easy:   { maxLevel: 1, nps: 1.45, minGap: 0.40, chord: 0,    hold: 0.10, jack: 0.70, hand: 0,    fillBeats: 4 },
   normal: { maxLevel: 2, nps: 2.7,  minGap: 0.20, chord: 0.04, hold: 0.10, jack: 0.40, hand: 0,    fillBeats: 4 },
-  hard:   { maxLevel: 3, nps: 4.4,  minGap: 0.12, chord: 0.10, hold: 0.08, jack: 0.24, hand: 0.15, fillBeats: 2 },
-  expert: { maxLevel: 3, nps: 6.6,  minGap: 0.075, chord: 0.17, hold: 0.06, jack: 0.16, hand: 0.11, fillBeats: 2 },
+  hard:   { maxLevel: 3, nps: 4.4,  minGap: 0.12, chord: 0.10, hold: 0.05, jack: 0.24, hand: 0.15, fillBeats: 2 },
+  expert: { maxLevel: 3, nps: 6.6,  minGap: 0.075, chord: 0.17, hold: 0.045, jack: 0.16, hand: 0.11, fillBeats: 2 },
 };
 const LEVEL_WEIGHT = [1.4, 1.0, 0.72, 0.5];
+// Normal (thinned Hard): a non-lead note stays when its onset is >= NORMAL_ACCENT x the local median
+const NORMAL_ACCENT = 1.0, NORMAL_DOWNBEAT = 1.3;
+const LEAD_BOOST = 1.6;
+// most notes that may start while a hold is held (other lanes); fewer holds sit under busy passages
+const HOLD_UNDER = { normal: 3, hard: 2, expert: 3 };
 
 function mulberry32(seed) {
   return () => {
@@ -33,11 +38,22 @@ function quantile(sorted, q) {
   return sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * sorted.length)))];
 }
 
+// ---- lead melody (optional): an.lead = { notes: [[time, dur, midi, strength 0..1], ...] } ----
+// From tools/lead/extract_lead.py (built-in songs: stem separation + transcription) or the analyzer's own
+// in-browser estimate (uploads). Grid slots where the lead starts a note become candidates even when the
+// mix has no clear onset there (legato lines), get picked first, and their lanes follow the lead's pitch.
+function leadNotes(an) {
+  const n = an.lead?.notes;
+  return Array.isArray(n) && n.length >= 16 ? n : null;
+}
+
 // ---- candidates: audio onsets snapped to the beat grid ----
 function audioCandidates(an) {
   const { beats, onsets } = an;
   const ot = onsets.t;
-  const used = new Set();
+  const lead = leadNotes(an);
+  const lt = lead ? lead.map(n => n[0]) : [];
+  const used = new Set(), usedLead = new Set();
   const out = [];
   const match = (t, tol) => {
     const i = lowerBound(ot, t - tol);
@@ -48,32 +64,70 @@ function audioCandidates(an) {
     }
     return best;
   };
-  const make = (t, j, level) => ({
-    t, level,
-    s: onsets.s[j], c: onsets.c[j], sus: onsets.sus[j],
-    lo: onsets.lo[j], hi: onsets.hi[j],
-  });
+  const matchLead = (t, tol) => {
+    let best = -1, bestD = tol;
+    for (let j = lowerBound(lt, t - tol); j < lt.length && lt[j] <= t + tol; j++) {
+      const d = Math.abs(lt[j] - t);
+      if (d <= bestD && !usedLead.has(j)) { best = j; bestD = d; }
+    }
+    return best;
+  };
+  // the mix's typical onset strength: what a lead note without its own clear onset counts as
+  const sMed = quantile([...onsets.s].sort((a, b) => a - b), 0.5);
+  const make = (t, j, level, li) => {
+    const c = j >= 0
+      ? { t, level, s: onsets.s[j], c: onsets.c[j], sus: onsets.sus[j], lo: onsets.lo[j], hi: onsets.hi[j] }
+      : { t, level, s: sMed * 0.8, c: 0, sus: 0, lo: 0, hi: 0 };
+    if (li >= 0) {
+      const [, dur, p, s] = lead[li];
+      c.lead = { p, s, d: dur };
+      c.sus = Math.max(c.sus, dur);
+      if (j < 0) { c.c = null; c.leadOnly = true; }   // no onset of its own: lane comes from the pitch alone
+    }
+    return c;
+  };
 
   for (let k = 0; k < beats.length; k++) {
     const b = beats[k];
     const d = k + 1 < beats.length ? beats[k + 1] - b : (k > 0 ? b - beats[k - 1] : 0.5);
     const tol = Math.min(0.035, d * 0.1);
+    const ltol = Math.min(0.05, d * 0.12);
     const beatLevel = ((k - an.downbeat) % 4 + 4) % 4 === 0 ? 0 : 1;
 
-    const jb = match(b, tol);
-    if (jb >= 0) { used.add(jb); out.push(make(b, jb, beatLevel)); }
+    const slot = (t, lv) => {
+      const j = match(t, tol), li = lead ? matchLead(t, ltol) : -1;
+      return [t, lv, j, li];
+    };
+    const take = ([t, lv, j, li]) => {
+      if (j >= 0 && used.has(j)) j = -1;
+      if (li >= 0 && usedLead.has(li)) li = -1;
+      if (j < 0 && li < 0) return;
+      if (j >= 0) used.add(j);
+      if (li >= 0) usedLead.add(li);
+      out.push(make(t, j, lv, li));
+    };
+    take(slot(b, beatLevel));
 
-    // straight (16ths) vs triplet subdivision: keep whichever explains more energy
-    const straight = [[0.5, 2], [0.25, 3], [0.75, 3]].map(([f, lv]) => [b + f * d, lv, match(b + f * d, tol)]);
-    const triplet = [[1 / 3, 3], [2 / 3, 3]].map(([f, lv]) => [b + f * d, lv, match(b + f * d, tol)]);
-    const energy = list => list.reduce((s, [, , j]) => s + (j >= 0 ? onsets.s[j] : 0), 0);
+    // straight (16ths) vs triplet subdivision: keep whichever explains more energy (lead notes count too)
+    const straight = [[0.5, 2], [0.25, 3], [0.75, 3]].map(([f, lv]) => slot(b + f * d, lv));
+    const triplet = [[1 / 3, 3], [2 / 3, 3]].map(([f, lv]) => slot(b + f * d, lv));
+    const energy = list => list.reduce((s, [, , j, li]) => s + (j >= 0 ? onsets.s[j] : 0) + (li >= 0 ? sMed : 0), 0);
     const chosen = energy(triplet) > energy(straight) * 1.3 ? triplet : straight;
-    for (const [t, lv, j] of chosen) {
-      if (j >= 0 && !used.has(j)) { used.add(j); out.push(make(t, j, lv)); }
-    }
+    for (const sl of chosen) take(sl);
   }
   out.sort((a, b) => a.t - b.t);
   return out;
+}
+
+// ---- the reverb / decay after the last chord: from where the track never again gets within TAIL_DB of its
+// median loudness. Onsets in there (a ringing cymbal, a reverb flutter) are not notes, holds end before it.
+const TAIL_DB = -12;
+function songTail(an) {
+  const db = an.env?.db;
+  if (!db?.length) return Infinity;
+  let i = db.length - 1;
+  while (i > 0 && db[i] < TAIL_DB) i--;
+  return (i + 1) / an.env.fps;
 }
 
 // ---- candidates: MIDI onsets keep their exact times and metric level ----
@@ -87,65 +141,132 @@ function midiCandidates(an) {
 // opts.gimmicks: add sweeps (Normal+), slides and scroll-speed changes (Hard+) on top of the plain chart.
 // The plain chart is the same either way: the gimmicks only re-lane notes, bend holds and add a speed track.
 export function generateChart(an, difficulty, seed = 1, opts = {}) {
-  const cfg = CONFIG[difficulty] || CONFIG.normal;
+  // Normal (songs with a lead line): Hard's note selection thinned to the lead and the accents (see below),
+  // then laid out as Normal. Songs without a lead line keep the plain Normal chart.
+  const tailAt = songTail(an);
+  let cands = (an.kind === 'midi' ? midiCandidates(an) : audioCandidates(an)).filter(c => c.t < tailAt);
+  if (tailAt < Infinity && cands.length) {
+    for (const c of cands) c.sus = Math.min(c.sus, tailAt - c.t);
+    // the final hit: the last onset of the last 2 s near their strongest is always a note (whatever its grid
+    // level), and while it rings out nothing much weaker is (its chord's ring, a cymbal)
+    const endT = cands[cands.length - 1].t;
+    const last2 = cands.filter(c => c.t >= endT - 2 && !c.leadOnly);
+    const sMax = Math.max(0, ...last2.map(c => c.s));
+    const fin = last2.filter(c => c.s >= sMax * 0.6).pop();
+    if (fin) {
+      fin.final = true;
+      const ring = fin.t + Math.max(fin.sus, 0.5) + 0.15;
+      cands = cands.filter(c => !(c.t > fin.t && c.t < ring && c.s < fin.s * 0.5));
+    }
+  }
+  const plain = difficulty === 'normal' && !opts.plainNormal && cands.some(c => c.lead);
+  if (plain) difficulty = 'hard';
+  let cfg = CONFIG[difficulty] || CONFIG.normal;
   const rand = mulberry32(seed * 7919 + DIFFICULTIES.indexOf(difficulty) + 1);
-  const cands = an.kind === 'midi' ? midiCandidates(an) : audioCandidates(an);
   const bpm = an.bpm || 120;
   const beatLen = 60 / bpm;
+  // Normal's minimum gap is 0.2 s, but never more than (just under) an 8th: in a fast song (8th < 0.2 s, over
+  // 150 BPM) two notes an 8th apart must still fit, or an 8th-note riff can only keep every other note and turns
+  // into 1.5-beat syncopations. Slower songs are unchanged (their 8th is longer than 0.2 s anyway).
+  const minGap = difficulty === 'normal' && beatLen / 2 < cfg.minGap ? beatLen * 0.45 : cfg.minGap;
   if (!cands.length) return { notes: [], stats: chartStats([], 0) };
 
   // --- 1. select note times ---
   const sArr = cands.map(c => c.s).sort((a, b) => a - b);
   const floor = quantile(sArr, 0.9) * 0.12;
+  // with a lead line: its notes go first (at least as strong as a typical accent), and 16ths that are not
+  // the lead (hi-hats, ghost notes) count less, so fast passages follow the melody instead of the drums
+  // A lone lead 16th (or triplet) is a syncopation that breaks the flow: only a 16th that is part of a lead
+  // run (another lead note a 16th / triplet step before or after) gets the boost. Bar downbeats keep their
+  // weight against the lead so the pulse stays readable.
+  const hasLead = cands.some(c => c.lead);
+  const sHi = quantile(sArr, 0.75);
+  const leadTimes = cands.filter(c => c.lead).map(c => c.t);
+  const inRun = c => {
+    const step = beatLen / (c.level === 3 ? 3.5 : 1.75);   // a little over a 16th (triplet) / an 8th
+    const k = lowerBound(leadTimes, c.t);
+    return (k > 0 && c.t - leadTimes[k - 1] <= step) || (k + 1 < leadTimes.length && leadTimes[k + 1] - c.t <= step);
+  };
+  const boosted = c => c.lead && (c.level < 3 || inRun(c));
+  const prio = c => c.final ? 1e9 : boosted(c)
+    ? Math.max(c.s, sHi) * LEVEL_WEIGHT[c.level] * LEAD_BOOST * (0.75 + 0.25 * c.lead.s)
+    : c.s * LEVEL_WEIGHT[c.level] * (hasLead && c.level === 0 ? LEAD_BOOST : hasLead && c.level === 3 ? 0.6 : 1);
+  const ok = c => c.s >= floor || !!c.lead;
   const span = Math.max(10, cands[cands.length - 1].t - cands[0].t);
   // faster songs are allowed to be denser (but less than linearly)
-  const target = Math.round(cfg.nps * Math.pow(bpm / 120, 0.6) * span);
+  let target = Math.round(cfg.nps * Math.pow(bpm / 120, 0.6) * span);
   // if the allowed subdivisions cannot supply enough notes (slow songs,
   // MIDI written in short note values) open up the next level
+  // (lead notes the mix has no onset for do not count: the lead changes which notes, not how many)
   let maxLevel = cfg.maxLevel;
   const usable = lv => {
-    const ts = cands.filter(c => c.level <= lv && c.s >= floor).map(c => c.t);
+    const ts = cands.filter(c => c.level <= lv && ok(c) && !c.leadOnly).map(c => c.t);
     let n = 0, last = -9;
-    for (const t of ts) if (t - last >= cfg.minGap) { n++; last = t; }
+    for (const t of ts) if (t - last >= minGap) { n++; last = t; }
     return n;
   };
   while (maxLevel < 3 && usable(maxLevel) < target * 0.6) maxLevel++;
-  const eligible = cands.filter(c => c.level <= maxLevel && c.s >= floor);
 
-  const order = eligible.map((c, i) => ({ i, p: c.s * LEVEL_WEIGHT[c.level] + rand() * 1e-3 }))
-    .sort((a, b) => b.p - a.p);
-  const times = []; // sorted chosen times
-  const chosenSet = new Set();
-  const fits = (t, gap) => {
-    const k = lowerBound(times, t);
-    return !(k < times.length && times[k] - t < gap - 1e-6) && !(k > 0 && t - times[k - 1] < gap - 1e-6);
-  };
-  const take = idx => {
-    const t = eligible[idx].t;
-    times.splice(lowerBound(times, t), 0, t);
-    chosenSet.add(idx);
-  };
-  for (const { i } of order) {
-    if (times.length >= target) break;
-    if (fits(eligible[i].t, cfg.minGap)) take(i);
-  }
-  // fill long silences so quiet sections still have something to play
-  const fillGap = cfg.fillBeats * beatLen;
-  for (let pass = 0; pass < 3; pass++) {
-    const snapshot = [...times];
-    for (let k = 0; k + 1 < snapshot.length; k++) {
-      if (snapshot[k + 1] - snapshot[k] <= fillGap) continue;
-      let best = -1;
-      for (let i = 0; i < eligible.length; i++) {
-        const c = eligible[i];
-        if (c.t <= snapshot[k] + beatLen * 0.9 || c.t >= snapshot[k + 1] - beatLen * 0.9 || chosenSet.has(i)) continue;
-        if (c.level > 1 && maxLevel > 1 && best >= 0 && eligible[best].level <= 1) continue;
-        if (best < 0 || c.s * LEVEL_WEIGHT[c.level] > eligible[best].s * LEVEL_WEIGHT[eligible[best].level]) best = i;
-      }
-      if (best >= 0 && fits(eligible[best].t, cfg.minGap)) take(best);
+  const select = (eligible, target) => {
+    const order = eligible.map((c, i) => ({ i, p: prio(c) + rand() * 1e-3 }))
+      .sort((a, b) => b.p - a.p);
+    const times = []; // sorted chosen times
+    const chosenSet = new Set();
+    const fits = (t, gap) => {
+      const k = lowerBound(times, t);
+      return !(k < times.length && times[k] - t < gap - 1e-6) && !(k > 0 && t - times[k - 1] < gap - 1e-6);
+    };
+    const take = idx => {
+      const t = eligible[idx].t;
+      times.splice(lowerBound(times, t), 0, t);
+      chosenSet.add(idx);
+    };
+    for (const { i } of order) {
+      if (times.length >= target) break;
+      if (fits(eligible[i].t, minGap)) take(i);
     }
+    // fill long silences so quiet sections still have something to play
+    const fillGap = cfg.fillBeats * beatLen;
+    for (let pass = 0; pass < 3; pass++) {
+      const snapshot = [...times];
+      for (let k = 0; k + 1 < snapshot.length; k++) {
+        if (snapshot[k + 1] - snapshot[k] <= fillGap) continue;
+        let best = -1;
+        for (let i = 0; i < eligible.length; i++) {
+          const c = eligible[i];
+          if (c.t <= snapshot[k] + beatLen * 0.9 || c.t >= snapshot[k + 1] - beatLen * 0.9 || chosenSet.has(i)) continue;
+          if (c.level > 1 && maxLevel > 1 && best >= 0 && eligible[best].level <= 1) continue;
+          if (best < 0 || prio(c) > prio(eligible[best])) best = i;
+        }
+        if (best >= 0 && fits(eligible[best].t, minGap)) take(best);
+      }
+    }
+    return [...chosenSet].map(i => eligible[i]).sort((a, b) => a.t - b.t);
+  };
+  const eligible = cands.filter(c => (c.level <= maxLevel || c.final) && ok(c));
+  // lead-only notes fill slots the plain chart could not: keep the density of the chart without them
+  if (eligible.some(c => c.leadOnly)) target = Math.min(target, Math.round(select(eligible.filter(c => !c.leadOnly), target).length));
+  let picked = select(eligible, target);
+  if (plain) {
+    // Hard's note times thinned by accent, not by metric position: a note stays when it is at least about as
+    // strong as the notes around it (+-2 beats), so a syncopated band hit on an off-beat stays and a weak
+    // on-beat filler goes. Bar downbeats count a little more (the pulse), 16ths / triplets never stay, lead
+    // notes on the 8th grid and the final hit always do. Never sparser than the plain Normal chart: the
+    // strongest dropped 8ths come back. Holds, lanes and chords are then Normal's own, laid out for these
+    // notes (thinning Hard's lanes would leave jacks where a trill lost its middle note).
+    const prim = picked.filter(c => c.level < 3);
+    const keep = new Set();
+    for (const c of prim) {
+      if (c.lead || c.final) { keep.add(c); continue; }
+      const near = prim.filter(x => Math.abs(x.t - c.t) <= beatLen * 2 + 1e-3).map(x => x.s).sort((a, b) => a - b);
+      if (c.s * (c.level === 0 ? NORMAL_DOWNBEAT : 1) >= quantile(near, 0.5) * NORMAL_ACCENT) keep.add(c);
+    }
+    const min = new Set(generateChart(an, 'normal', seed, { plainNormal: true }).notes.map(n => n.time)).size;
+    for (const c of prim.filter(c => !keep.has(c)).sort((a, b) => b.s - a.s)) { if (keep.size >= min) break; keep.add(c); }
+    picked = picked.filter(c => keep.has(c));
+    difficulty = 'normal';
+    cfg = CONFIG.normal;
   }
-  const picked = [...chosenSet].map(i => eligible[i]).sort((a, b) => a.t - b.t);
 
   // --- 2. hold candidates: notes with the longest sustain and room after them ---
   const holdMin = Math.max(0.35, beatLen * 1.0);
@@ -153,24 +274,44 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
   if (cfg.hold > 0) {
     const ranked = picked.map((c, i) => ({ i, sus: c.sus })).filter(x => x.sus >= holdMin).sort((a, b) => b.sus - a.sus);
     const maxHolds = Math.round(picked.length * cfg.hold);
+    // a hold under a busy passage (a rock song's power chord ringing under the riff) means tapping the riff
+    // with one hand pinned: only so many other notes may start while it is held
+    const maxUnder = HOLD_UNDER[difficulty] ?? 9;
+    const under = i => {
+      const t = picked[i].t, end = t + Math.min(picked[i].sus, beatLen * 4);
+      let n = 0;
+      for (let j = i + 1; j < picked.length && picked[j].t < end - 0.05; j++) if (picked[j].t > t + 0.05) n++;
+      return n;
+    };
     for (const { i } of ranked) {
       if (holdIdx.size >= maxHolds) break;
+      if (under(i) > maxUnder) continue;
       if (difficulty === 'easy' && i + 1 < picked.length && picked[i + 1].t - picked[i].t < holdMin + 0.3) continue;
       holdIdx.add(i);
     }
   }
 
   // --- 3. lane assignment ---
-  const cs = picked.map(c => c.c).sort((a, b) => a - b);
+  const cs = picked.filter(c => c.c != null).map(c => c.c).sort((a, b) => a - b);
   const q1 = quantile(cs, 0.25), q2 = quantile(cs, 0.5), q3 = quantile(cs, 0.75);
   const prefLane = c => (c < q1 ? 0 : c < q2 ? 1 : c < q3 ? 2 : 3);
   const hand = l => (l < 2 ? 0 : 1);
+  // lead notes: lane from the pitch within the melody's local range (+-4 s), low = left, high = right
+  const leadT = [], leadP = [];
+  picked.forEach(c => { if (c.lead) { leadT.push(c.t); leadP.push(c.lead.p); } });
+  const pitchLane = (t, p) => {
+    const ps = leadP.slice(lowerBound(leadT, t - 4), lowerBound(leadT, t + 4)).sort((a, b) => a - b);
+    const lo = quantile(ps, 0.1), hi = quantile(ps, 0.9);
+    const range = Math.max(5, hi - lo), mid = (lo + hi) / 2;
+    return Math.max(0, Math.min(3, Math.round(1.5 + (p - mid) / range * 3)));
+  };
 
   const notes = [];
   const noteC = new Map();   // note -> pitch / brightness of its onset (for sweep and slide directions)
+  const noteP = new Map();   // note -> lead pitch (MIDI), when it is a lead note
   const busyUntil = [-1, -1, -1, -1];
   const lastAt = [-9, -9, -9, -9];
-  let prevLane = -1, prevT = -9, prevC = null, lastChord = -9;
+  let prevLane = -1, prevT = -9, prevC = null, prevP = null, lastChord = -9;
   const sStrong = quantile(picked.map(c => c.s).sort((a, b) => a - b), 1 - cfg.chord);
   const maxChords = Math.round(picked.length * cfg.chord);
   let chords = 0;
@@ -185,12 +326,12 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
     return phraseLayout.get(phrase);
   };
 
-  const choose = (t, pref, exclude) => {
+  const choose = (t, pref, exclude, noise = 0.9) => {
     let best = -1, bestCost = Infinity;
     for (let l = 0; l < 4; l++) {
       if (exclude.includes(l) || busyUntil[l] > t - 0.05) continue;
       const gap = t - lastAt[l];
-      let cost = Math.abs(l - pref) * 0.9 + rand() * 0.9;
+      let cost = Math.abs(l - pref) * 0.9 + rand() * noise;
       if (gap < cfg.jack) cost += 6 * (1 - gap / cfg.jack) + 2;
       if (prevLane >= 0 && cfg.hand > 0 && t - prevT < cfg.hand && hand(l) === hand(prevLane)) cost += 3;
       if (l === prevLane) cost += 0.6;
@@ -203,13 +344,26 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
   for (let i = 0; i < picked.length; i++) {
     const c = picked[i];
     const t = c.t;
-    // follow the melodic contour a little: rising sound -> move right
-    let pref = layoutAt(t)[prefLane(c.c)];
-    if (prevC !== null && prevLane >= 0 && t - prevT < beatLen) {
-      if (c.c > prevC + 0.15) pref = Math.min(3, Math.max(pref, prevLane + 1));
-      else if (c.c < prevC - 0.15) pref = Math.max(0, Math.min(pref, prevLane - 1));
+    let pref;
+    if (c.lead) {
+      // the melody itself: higher note -> further right, a step up / down moves at least one lane that way,
+      // a repeated pitch stays, unless that would be a fast jack: then it trills with the lane next to it
+      pref = pitchLane(t, c.lead.p);
+      if (prevP !== null && prevLane >= 0 && t - prevT < beatLen * 1.01) {
+        if (c.lead.p > prevP) pref = Math.min(3, Math.max(pref, prevLane + 1));
+        else if (c.lead.p < prevP) pref = Math.max(0, Math.min(pref, prevLane - 1));
+        else pref = t - prevT >= 0.3 ? prevLane : prevLane + (prevLane < 2 ? 1 : -1);
+      }
+    } else {
+      // follow the brightness contour a little: rising sound -> move right
+      pref = layoutAt(t)[prefLane(c.c)];
+      if (prevC !== null && prevLane >= 0 && t - prevT < beatLen) {
+        if (c.c > prevC + 0.15) pref = Math.min(3, Math.max(pref, prevLane + 1));
+        else if (c.c < prevC - 0.15) pref = Math.max(0, Math.min(pref, prevLane - 1));
+      }
     }
-    const lane = choose(t, pref, []);
+    // (lead notes: less randomness, so the lanes keep the melody's shape)
+    const lane = choose(t, pref, [], c.lead ? 0.35 : 0.9);
     if (lane < 0) continue;
 
     const note = { time: t, lane };
@@ -217,7 +371,9 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
       let end = t + Math.min(c.sus, beatLen * 4);
       if (difficulty === 'easy' && i + 1 < picked.length) end = Math.min(end, picked[i + 1].t - 0.3);
       // snap the tail to the half-beat grid
-      end = t + Math.max(holdMin, Math.round((end - t) / (beatLen / 2)) * (beatLen / 2));
+      let halves = Math.round((end - t) / (beatLen / 2));
+      if (t + halves * beatLen / 2 > tailAt) halves = Math.floor((tailAt - t) / (beatLen / 2));   // not into the decay
+      end = t + Math.max(holdMin, halves * (beatLen / 2));
       if (end - t >= holdMin * 0.95) {
         note.end = end;
         busyUntil[lane] = end + 0.08;
@@ -225,6 +381,7 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
     }
     notes.push(note);
     noteC.set(note, c.c);
+    if (c.lead) noteP.set(note, c.lead.p);
     lastAt[lane] = Math.max(lastAt[lane], note.end || t);
 
     // chords on the strongest accents
@@ -241,7 +398,7 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
     }
     recent.push(lane);
     if (recent.length > 4) recent.shift();
-    prevLane = lane; prevT = t; prevC = c.c;
+    prevLane = lane; prevT = t; prevC = c.c; prevP = c.lead ? c.lead.p : null;
   }
 
   notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
@@ -249,8 +406,11 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
   if (opts.gimmicks) {
     const di = DIFFICULTIES.indexOf(difficulty);
     const rand2 = mulberry32(seed * 104729 + di * 13 + 5);
-    if (di >= 1) addSweeps(notes, noteC, beatLen, cfg, di, rand2);
-    if (di >= 2) addSlides(notes, noteC, cands, beatLen, di, rand2);
+    // direction of a sweep / slide: the lead's pitch when both ends are lead notes, else the brightness
+    const rise = (a, b) => noteP.has(a) && noteP.has(b) ? noteP.get(b) - noteP.get(a)
+      : (noteC.get(a) != null && noteC.get(b) != null ? noteC.get(b) - noteC.get(a) : 0);
+    if (di >= 1) addSweeps(notes, rise, beatLen, cfg, di, rand2);
+    if (di >= 2) addSlides(notes, noteC, noteP, cands, beatLen, di, rand2);
     if (di >= 2) speed = speedTrack(an, di, beatLen);
     notes.sort((a, b) => a.time - b.time || a.lane - b.lane);
   }
@@ -259,7 +419,7 @@ export function generateChart(an, difficulty, seed = 1, opts = {}) {
 
 // ---- sweeps: 3-4 evenly spaced single notes (8ths or faster) re-laned as a staircase, in the
 // direction the melody / brightness moves. Each note keeps its time; they share a sweep id.
-function addSweeps(notes, noteC, beatLen, cfg, di, rand) {
+function addSweeps(notes, rise, beatLen, cfg, di, rand) {
   // Normal: quarter-note staircases are fine too
   const maxGap = di >= 2 ? Math.min(0.26, beatLen * 0.55) : Math.min(0.5, beatLen * 1.05), minGap = di >= 3 ? 0.06 : 0.12;
   const len = di >= 2 ? 4 : 3;
@@ -281,7 +441,7 @@ function addSweeps(notes, noteC, beatLen, cfg, di, rand) {
     }
     if (!ok || rand() > (di >= 3 ? 0.8 : 0.6)) continue;
     const run = notes.slice(i, i + len);
-    const dc = (noteC.get(run[len - 1]) ?? 0) - (noteC.get(run[0]) ?? 0);
+    const dc = rise(run[0], run[len - 1]);
     const dir = Math.abs(dc) > 1e-6 ? Math.sign(dc) : (rand() < 0.5 ? 1 : -1);
     const start = len === 4 ? (dir > 0 ? 0 : 3) : (dir > 0 ? Math.floor(rand() * 2) : 3 - Math.floor(rand() * 2));
     const lanes = run.map((_, k) => start + dir * k);
@@ -300,8 +460,12 @@ function addSweeps(notes, noteC, beatLen, cfg, di, rand) {
 
 // ---- slides: long holds bend into the neighbouring lane on a beat (one bend, two on long holds),
 // toward where the melody goes while the note is held. The lane they move into must be free.
-function addSlides(notes, noteC, cands, beatLen, di, rand) {
+function addSlides(notes, noteC, noteP, cands, beatLen, di, rand) {
   const rate = di >= 3 ? 0.6 : 0.4, D = 0.12;
+  // slides are a feature, not the texture: songs full of long chords (a rock song's held power chords) would
+  // otherwise bend every few seconds. A slide starts at least 5 s (Hard) / 3 s (Expert) after the last one ended.
+  const spacing = di >= 3 ? 3 : 5;
+  let lastSlide = -1e9;
   // lane l free from a to b? Single taps in the way move to another lane at the same time if one is
   // open (not the slide's own lane, nothing within 0.1 s, no hold over it, no note at the same time)
   const clear = (l, own, a, b, self) => {
@@ -322,16 +486,20 @@ function addSlides(notes, noteC, cands, beatLen, di, rand) {
     if (!h.end || h.sweep != null) continue;
     const dur = h.end - h.time;
     if (dur < beatLen * 1.25 || rand() > rate) continue;
+    if (h.time - lastSlide < spacing) continue;
     const slots = [];
     for (let k = 1; h.time + k * beatLen / 2 < h.end - beatLen * 0.45; k++) slots.push(h.time + k * beatLen / 2);
     if (!slots.length) continue;
-    const times = dur >= beatLen * 3 && slots.length >= 2
+    const times = di >= 3 && dur >= beatLen * 3 && slots.length >= 2   // two bends: Expert only
       ? [slots[Math.floor(slots.length / 3)], slots[Math.floor(slots.length * 2 / 3)]]
       : [slots[Math.floor((slots.length - 1) / 2)]];
     if (times.length === 2 && times[0] === times[1]) times.pop();
-    const c0 = noteC.get(h) ?? 0;
-    const after = cands.filter(c => c.t > times[0] - 0.05 && c.t < h.end);
-    const cAfter = after.length ? after.reduce((s, c) => s + c.c, 0) / after.length : c0;
+    // where the melody goes while the note is held: the lead's pitch for a lead hold, else the brightness
+    const byPitch = noteP.has(h);
+    const val = c => (byPitch ? c.lead?.p : c.c);
+    const c0 = (byPitch ? noteP.get(h) : noteC.get(h)) ?? 0;
+    const after = cands.filter(c => c.t > times[0] - 0.05 && c.t < h.end && val(c) != null);
+    const cAfter = after.length ? after.reduce((s, c) => s + val(c), 0) / after.length : c0;
     let dir = Math.abs(cAfter - c0) > 1e-6 ? Math.sign(cAfter - c0) : (h.lane < 2 ? 1 : -1);
     const zig = times.length === 2 && rand() < 0.4;
     const path = [];
@@ -346,7 +514,7 @@ function addSlides(notes, noteC, cands, beatLen, di, rand) {
       path.push({ time: +times[k].toFixed(4), lane: nl });
       cur = nl;
     }
-    if (path.length) h.path = path;
+    if (path.length) { h.path = path; lastSlide = h.end; }
   }
 }
 
