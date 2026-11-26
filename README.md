@@ -12,6 +12,7 @@ A browser-based 4-key rhythm game. Play the built-in songs (generated with Googl
 - **Gimmick notes** (Settings → 譜面 華麗 / 經典) — sweeps (Normal+: a staircase of steps along the melody), slides (Hard+: holds that bend into the next lane, the next key takes over) and scroll-speed changes per song section (Hard+, with a brake before the drop on Expert). Judging times never change.
 - **Built-in songs** — 孤夜's own song 《星空的歸途》 (music & lyrics: Luci, Gamania; from the [official MV](https://www.youtube.com/watch?v=S2Uni6OgNSU)), 10 Lyria 3.5 tracks in different styles (synthwave, reggaeton, city pop, funk/disco, nu-disco, K-pop, electro house, chiptune, pop-punk, drum & bass; 90–175 BPM).
 - **Accurate timing** — the song clock follows the audio hardware clock (`getOutputTimestamp`, output latency compensated), input is judged at the event timestamp, not the frame time.
+- **Tutorial** (title screen) — a short demo chart plays itself, then the player plays it; their median hit offset becomes a one-tap offset fix.
 - **Latency calibration** — tap-along calibration screen, plus a per-play suggestion based on your median hit offset.
 - **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
 - **中文 / 日本語** — UI and 孤夜's lines in both; picked from the browser language, switchable on the title screen and in Settings, or linked directly with `?lang=ja` / `?lang=zh` (`js/i18n.js`).

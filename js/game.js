@@ -342,8 +342,9 @@ export class Game {
   }
 
   // ---------- lifecycle ----------
-  start({ notes, speed, beats, downbeat, barBeats, music, title, songId, difficulty, settings }) {
+  start({ notes, speed, beats, downbeat, barBeats, music, title, songId, difficulty, settings, auto = false }) {
     this.settings = settings;
+    this.auto = auto;   // tutorial demo: plays itself, input ignored
     this.title = title;
     this.difficulty = difficulty;
     this.beats = (beats || []).map(b => b * 1000);
@@ -454,7 +455,7 @@ export class Game {
 
   // ---------- input ----------
   press(lane, perf) {
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || this.auto) return;
     this.keyDown[lane] = true;
     this.presses++;
     this.beam[lane] = 1;
@@ -511,7 +512,7 @@ export class Game {
 
   release(lane, perf) {
     this.keyDown[lane] = false;
-    if (this.state !== 'playing') return;
+    if (this.state !== 'playing' || this.auto) return;
     const n = this.holding[lane];
     if (!n) return;
     this.holding[lane] = null;
@@ -697,7 +698,7 @@ export class Game {
     // fingers resting on a slide: carry it over once its bend is near, even if they stopped moving
     for (const p of this.pointers.values()) if (this.holding[p.lane]?.path) this.trackFinger(p, now);
 
-    if (AUTOPLAY) this.autoPlay(t);
+    if (AUTOPLAY || this.auto) this.autoPlay(t);
 
     // auto-miss late notes, complete holds
     for (let l = 0; l < 4; l++) {

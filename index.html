@@ -27,6 +27,7 @@
       </div>
       <nav class="menu">
         <button class="btn primary big" data-go="select">PLAY</button>
+        <button class="btn" id="btnTutorial">TUTORIAL</button>
         <button class="btn" data-go="settings">SETTINGS</button>
         <button class="btn" id="btnTitleLeaderboard">RANKING</button>
       </nav>
@@ -110,6 +111,16 @@
     <button class="btn primary" id="btnCalStart">Start</button>
     <button class="btn hidden" id="btnCalApply" data-i18n="cal.apply">Apply</button>
   </section>
+
+  <!-- Tutorial: between the demo and the player's go, and the timing result after it -->
+  <section id="tutorialScreen" class="screen">
+    <div class="scene-bg"></div>
+    <div class="tut-title" id="tutTitle"></div>
+    <div class="tut-sub" id="tutSub"></div>
+    <div class="keys tut-keys" id="tutKeys"></div>
+    <div class="btn-row tut-btns" id="tutBtns"></div>
+  </section>
+  <div id="tutBanner" class="hidden"></div>
 
   <!-- Pause -->
   <section id="pauseScreen" class="screen dim">
