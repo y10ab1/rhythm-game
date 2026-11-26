@@ -23,7 +23,7 @@ if (DEBUG) { game.dbg = new DebugLog(); window.__game = game; }
 
 // ---------- settings ----------
 const DEFAULTS = {
-  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true, character: true, cutin: true, noteStyle: 'bachi', gimmicks: true,
+  speed: 5, offset: 0, music: 80, hitsound: 45, showTiming: true, noFail: false, autoSubmit: true, playLog: true, character: true, cutin: true, noteStyle: 'bachi', gimmicks: true,
   keys: ['KeyD', 'KeyF', 'KeyJ', 'KeyK'], keyLabels: ['D', 'F', 'J', 'K'],
 };
 let settings = { ...DEFAULTS, ...safeJSON(localStorage.getItem('rhythmSettings'), {}) };
@@ -476,7 +476,7 @@ async function startSong(song, diff) {
       const gameTimes = new Set(notes.map(n => n.time));
       music = { type: 'midi', notes: entry.midiNotes, isGameNote: n => gameTimes.has(n.g) };
     }
-    playing = { song, difficulty: diff };
+    playing = { song, difficulty: diff, playId: newId(), startedAt: Date.now(), bpm: entry.analysis.bpm, logged: false };
     applyVolumes();
     await charReady;
     await audio.resume();
@@ -505,6 +505,7 @@ function resumeGame() {
   game.resume();
 }
 function quitGame() {
+  logPlay('quit');
   game.stop();
   show('select');
   renderSongList();
@@ -512,8 +513,56 @@ function quitGame() {
 $('pauseBtn').addEventListener('click', pauseGame);
 $('btnResume').addEventListener('click', resumeGame);
 $('btnQuit').addEventListener('click', quitGame);
-$('btnPauseRetry').addEventListener('click', () => { game.stop(); startSong(playing.song, playing.difficulty); });
+$('btnPauseRetry').addEventListener('click', () => { logPlay('retry'); game.stop(); startSong(playing.song, playing.difficulty); });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
+// tab closed or app swiped away mid-song: still log how far they got
+window.addEventListener('pagehide', () => { if (game.state === 'playing' || game.state === 'paused') logPlay('closed'); });
+
+// ---------- play log ----------
+// One record per play (cleared, failed, quit, retried or closed mid-song) for tuning charts and difficulty:
+// result, settings, device type and each reached note's timing. Anonymous id, no IP; off in Settings.
+// Stored by the API worker (worker/, table plays). Not sent for ?auto=1 or ?debug=1 plays.
+function newId() { return crypto.randomUUID?.() || Date.now().toString(36) + Math.random().toString(36).slice(2, 12); }
+function clientId() {
+  let id = localStorage.getItem('rhythmClientId');
+  if (!id) { id = newId(); localStorage.setItem('rhythmClientId', id); }
+  return id;
+}
+function logPlay(outcome, r) {
+  if (!playing || playing.logged || AUTOPLAY || DEBUG || settings.playLog === false) return;
+  if (!game.notes) return;
+  playing.logged = true;
+  try {
+    const { song, difficulty: diff } = playing;
+    r = r || game.result(false);
+    const log = game.playLog();
+    const body = JSON.stringify({
+      v: 1, play_id: playing.playId, client_id: clientId(), player_name: playerName(),
+      song_id: song.id, song_title: song.title, builtin: !!song.builtin, kind: song.kind || 'audio',
+      difficulty: diff, level: song.levels?.[diff]?.level ?? null, bpm: Math.round(playing.bpm || song.bpm || 0) || null,
+      outcome, score: r.score, accuracy: +(r.accuracy * 100).toFixed(2), max_combo: r.maxCombo,
+      perfect: r.counts.perfect, great: r.counts.great, good: r.counts.good, miss: r.counts.miss,
+      fast: r.fast, slow: r.slow, median_offset: Math.round(r.medianOffset || 0), rank: r.rank,
+      notes_total: log.notesTotal, song_ms: log.songMs, end_ms: log.endMs,
+      wall_ms: Date.now() - playing.startedAt, pauses: log.pauses,
+      settings: {
+        speed: settings.speed, offset: settings.offset, noFail: !!settings.noFail, gimmicks: settings.gimmicks !== false,
+        noteStyle: settings.noteStyle, character: !!settings.character, cutin: !!settings.cutin, showTiming: !!settings.showTiming,
+        music: settings.music, hitsound: settings.hitsound, keys: settings.keyLabels?.join(''),
+      },
+      device: {
+        presses: log.presses, touch: log.touchPresses, w: innerWidth, h: innerHeight, dpr: devicePixelRatio,
+        touchScreen: navigator.maxTouchPoints > 0, ua: navigator.userAgent.slice(0, 200), lang, host: location.host,
+      },
+      notes: log.notes,
+    });
+    const url = API_BASE + '/api/play';
+    // text/plain: no CORS preflight, and sendBeacon still gets it out while the page is closing
+    if (!(navigator.sendBeacon && body.length < 60000 && navigator.sendBeacon(url, new Blob([body], { type: 'text/plain' })))) {
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body, keepalive: body.length < 60000 }).catch(() => {});
+    }
+  } catch (err) { console.warn('play log', err); }
+}
 
 // ---------- debug log (?debug=1) ----------
 // sent to /debug-log on the page's own server (tools/debug-server.py); a download otherwise
@@ -552,6 +601,7 @@ function showDebugUpload(r) {
 // ---------- results ----------
 let lastResult = null;
 function showResults(r) {
+  logPlay(r.failed ? 'failed' : 'clear', r);
   const { song, difficulty: diff } = playing;
   show('results');
   $('resSong').textContent = song.title;
@@ -700,6 +750,7 @@ $('setName').addEventListener('change', e => {
   if (n) setPlayerName(n); else e.target.value = playerName();
 });
 $('setAutoSubmit').addEventListener('change', e => { settings.autoSubmit = e.target.checked; saveSettings(); });
+$('setPlayLog').addEventListener('change', e => { settings.playLog = e.target.checked; saveSettings(); });
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
 
@@ -780,6 +831,7 @@ function syncSettingsUI() {
   document.querySelectorAll('#setNote button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === settings.noteStyle)));
   document.querySelectorAll('#setGimmick button').forEach(b => b.setAttribute('aria-pressed', String((b.dataset.v === 'on') === (settings.gimmicks !== false))));
   $('setAutoSubmit').checked = settings.autoSubmit;
+  $('setPlayLog').checked = settings.playLog !== false;
   $('setName').value = playerName();
   renderKeys();
   syncLangUI();

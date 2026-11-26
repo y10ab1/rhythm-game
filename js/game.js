@@ -225,7 +225,7 @@ export class Game {
     this.dbg?.pointer(cancel ? 'cancel' : 'up', id, p.x, p.y, this.lanePos(p.x, p.y), p.lane, perf, e);
     this.fingerOff(p.lane, perf);
   }
-  fingerOn(lane, perf) { this.laneCount[lane]++; this.press(lane, perf); }
+  fingerOn(lane, perf) { this.laneCount[lane]++; if (this.state === 'playing') this.touchPresses++; this.press(lane, perf); }
   fingerOff(lane, perf) {
     this.laneCount[lane] = Math.max(0, this.laneCount[lane] - 1);
     if (!this.laneCount[lane]) this.release(lane, perf);
@@ -385,6 +385,8 @@ export class Game {
     this.combo = 0; this.maxCombo = 0;
     this.hp = 100;
     this.offsets = [];
+    this.presses = 0; this.touchPresses = 0;   // play log: keyboard or touch
+    this.pauses = 0;
     this.fast = 0; this.slow = 0;
     this.lastJudge = null;
     this.effects = []; this.particles = []; this.errTicks = [];
@@ -420,6 +422,7 @@ export class Game {
   async pause() {
     if (this.state !== 'playing') return;
     this.state = 'paused';
+    this.pauses++;
     this.char.pauseMv();
     await this.audio.pause();
   }
@@ -453,6 +456,7 @@ export class Game {
   press(lane, perf) {
     if (this.state !== 'playing') return;
     this.keyDown[lane] = true;
+    this.presses++;
     this.beam[lane] = 1;
     if (this.settings.hitsound > 0) this.audio.playTap();
     const t = this.songAt(perf);
@@ -530,6 +534,7 @@ export class Game {
     this.dbg?.judge('hit', n, tier.key, diff);
     this.award(tier, n.lane);
     this.offsets.push(diff);
+    n.off = diff;
     this.meanErr = this.meanErr * 0.9 + diff * 0.1;
     if (tier.key !== 'perfect') { if (diff < 0) this.fast++; else this.slow++; }
     this.lastJudge = { tier, time: performance.now(), diff, lane: n.lane };
@@ -661,6 +666,22 @@ export class Game {
       score: this.score(), accuracy: acc, maxCombo: this.maxCombo, counts: { ...this.counts },
       fast: this.fast, slow: this.slow, medianOffset: median, hits: sorted.length,
       offsets: this.offsets, failed, ...rankFor(acc, this.counts, failed),
+    };
+  }
+
+  // play log (sent by main.js): how far the player got, and every note reached as
+  // [time ms, lane, offset ms (+ late, null = miss), flags: 1 hold, 2 slide, 4 sweep, 8 hold let go early]
+  playLog() {
+    const notes = [];
+    for (const n of this.notes || []) {
+      if (n.state === 0) continue;
+      const f = (n.end ? 1 : 0) | (n.path ? 2 : 0) | (n.sweep != null ? 4 : 0) | (n.tail === 2 && n.state !== 3 ? 8 : 0);
+      notes.push([Math.round(n.t), n.lane, n.state === 3 || n.off == null ? null : Math.round(n.off), f]);
+    }
+    return {
+      notes, notesTotal: this.notes?.length || 0, judgedTotal: this.total || 0,
+      songMs: Math.round(Math.max(0, this.songTime || 0)), endMs: Math.round(this.endMs || 0),
+      presses: this.presses || 0, touchPresses: this.touchPresses || 0, pauses: this.pauses || 0,
     };
   }
 

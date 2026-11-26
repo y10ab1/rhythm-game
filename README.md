@@ -16,6 +16,7 @@ A browser-based 4-key rhythm game. Play the built-in songs (generated with Googl
 - **Feedback** — instant hit sound on press, hit bursts, FAST/SLOW + ms readout, hit-error bar, beat lines and beat-synced visuals.
 - **中文 / 日本語** — UI and 孤夜's lines in both; picked from the browser language, switchable on the title screen and in Settings, or linked directly with `?lang=ja` / `?lang=zh` (`js/i18n.js`).
 - **Leaderboard** — global and per-song leaderboards powered by Cloudflare Workers + D1.
+- **Play log** — every play is logged anonymously (result, settings, per-note timing) for tuning the charts; see [Play log](#play-log).
 - **孤夜 + 黑白無常** — the on-stage character and her two robots (black and white). Every built-in song has its own 3D music video (3 clips + a FEVER clip) that plays behind the lanes once you hold a 30 combo; uploaded songs get a mix of all of them. Starlight Stage and 《星空的歸途》 instead have a full-length 3D dance performance by 孤夜, synced to the song (`tools/dance`).
 
 ## Controls
@@ -118,7 +119,29 @@ wrangler d1 execute rhythm-game-leaderboard --file=schema.sql --remote
 wrangler deploy
 ```
 
-Set `API_BASE` in `js/main.js` to the Worker URL.
+Set `API_BASE` in `js/main.js` to the Worker URL. The worker is deployed by hand (not by CI).
+
+### Play log
+
+Every play (cleared, failed, quit, retried or closed mid-song) sends one record to `POST /api/play`, stored in
+the D1 table `plays` (see `worker/schema.sql`): result, settings, keyboard/touch, screen, country and each reached
+note's timing (`[ms, lane, offset or null = miss, flags]`). Anonymous (a random browser id, no IP); players can turn
+it off in Settings (提供遊玩數據). Not sent for `?auto=1` / `?debug=1`. About 8–25 KB per full play.
+
+```bash
+cd worker
+Q() { npx wrangler@4 d1 execute rhythm-game-leaderboard --remote --command "$1"; }
+# plays per day, players, clears
+Q "SELECT date(created_at) d, COUNT(*) plays, COUNT(DISTINCT client_id) players, SUM(outcome='clear') clears FROM plays GROUP BY d ORDER BY d DESC LIMIT 14"
+# per song + difficulty: clear rate, quit rate, average accuracy, where people quit
+Q "SELECT song_id, difficulty, COUNT(*) n, ROUND(AVG(outcome='clear')*100) clear_pct, ROUND(AVG(outcome IN ('quit','retry','closed'))*100) quit_pct,
+     ROUND(AVG(accuracy),1) acc, ROUND(AVG(CASE WHEN outcome!='clear' THEN song_ms*100.0/end_ms END)) quit_at_pct FROM plays GROUP BY 1,2 ORDER BY 1,2"
+# hardest moments of a chart: miss rate per second of the song
+Q "SELECT j.value->>0/1000 sec, COUNT(*) n, ROUND(AVG(j.value->>2 IS NULL)*100) miss_pct FROM plays, json_each(plays.notes) j
+     WHERE song_id='skyline-run' AND difficulty='hard' GROUP BY sec HAVING n>=5 ORDER BY miss_pct DESC LIMIT 20"
+# keyboard vs touch, and median timing offset (calibration)
+Q "SELECT input, COUNT(*) n, ROUND(AVG(accuracy),1) acc, ROUND(AVG(median_offset)) offset FROM plays GROUP BY input"
+```
 
 ## License
 
