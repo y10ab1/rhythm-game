@@ -45,7 +45,7 @@ function unlockAudio() {
 let screen = 'title';
 let settingsReturn = 'title';
 // big scene changes get a slanted-band wipe; the swap happens while the bands cover the screen
-const WIPE = new Set(['title>select', 'select>loading', 'loading>play', 'play>results', 'results>loading', 'results>select', 'pause>select', 'play>tutorial', 'tutorial>select']);
+const WIPE = new Set(['title>select', 'select>loading', 'loading>play', 'play>results', 'results>loading', 'results>select', 'pause>select', 'tutorial>select']);
 let wipeTimer = 0;
 function show(name) {
   const from = screen;
@@ -509,7 +509,7 @@ function resumeGame() {
 function quitGame() {
   logPlay('quit');
   game.stop();
-  if (tut) { tut = null; show('title'); return; }
+  if (tut) { tutLeave('title')(); return; }
   show('select');
   renderSongList();
 }
@@ -518,59 +518,70 @@ $('btnResume').addEventListener('click', resumeGame);
 $('btnQuit').addEventListener('click', quitGame);
 $('btnPauseRetry').addEventListener('click', () => {
   logPlay('retry'); game.stop();
-  if (tut) startTutorial(tut.phase); else startSong(playing.song, playing.difficulty);
+  if (tut) tutTry(tut.step); else startSong(playing.song, playing.difficulty);
 });
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 // tab closed or app swiped away mid-song: still log how far they got
 window.addEventListener('pagehide', () => { if (game.state === 'playing' || game.state === 'paused') logPlay('closed'); });
 
 // ---------- tutorial ----------
-// TUTORIAL on the title screen: the game plays a short chart by itself (taps, chords, holds), then the player
-// plays the same chart; their median hit offset becomes a one-tap offset suggestion.
-let tut = null;   // { phase: 'demo' | 'try' }
-const TUT_BEAT = 0.5;   // 120 BPM
-const TUT_LANE_PITCH = [72, 76, 79, 84];
+// TUTORIAL on the title screen: the four kinds of notes one at a time. Each step shows the note in a small
+// window (a second Game on its own canvas that plays itself, the keys lighting up below it) with one line on
+// how to play it; then the player plays the same short chart. At the end, the median hit offset of all the
+// steps becomes a one-tap offset fix (校準打擊) when it is clearly off.
+const TUT_BEAT = 0.6;   // 100 BPM
+const TUT_PITCH = [72, 76, 79, 84];
+const TUT_STEPS = [
+  { id: 'tap', chart: at => [0, 1, 2, 3, 3, 2, 1, 0].map((l, i) => ({ time: at(i), lane: l })) },
+  { id: 'hold', chart: at => [[1, 0, 2], [2, 3, 5], [0, 6, 8], [3, 9, 11]].map(([l, a, b]) => ({ time: at(a), lane: l, end: at(b) })) },
+  { id: 'sweep', chart: at => [[0, 1, 2, 3], [3, 2, 1, 0], [0, 1, 2, 3]].flatMap((ls, k) => ls.map((l, i) => ({ time: at(k * 3 + i / 2), lane: l, sweep: k }))) },
+  { id: 'slide', chart: at => [[1, 0, 2, 2, 4], [2, 5, 7, 1, 9], [0, 10, 12, 1, 14]].map(([l, a, bend, to, b]) => ({ time: at(a), lane: l, end: at(b), path: [{ time: at(bend), lane: to }] })) },
+];
+let tut = null;    // { step, phase: 'card' | 'try' | 'done', offs: [hit offsets], counts }
+let demo = null;   // the preview Game
 const isTouch = () => matchMedia('(pointer: coarse)').matches;
-function tutorialChart() {
-  const at = b => (b + 4) * TUT_BEAT;   // 4 count-in beats
-  const n = [];
-  [0, 1, 2, 3, 3, 2, 1, 0].forEach((l, i) => n.push({ time: at(i), lane: l }));
-  [[0, 3], [1, 2], [0, 3], [1, 2]].forEach((ls, i) => ls.forEach(l => n.push({ time: at(8 + i), lane: l })));
-  n.push({ time: at(12), lane: 1, end: at(14) }, { time: at(14), lane: 2, end: at(16) });
-  [0, 1, 2, 3, 0, 2, 1, 3].forEach((l, i) => n.push({ time: at(16 + i), lane: l }));
-  return n.sort((a, b) => a.time - b.time || a.lane - b.lane);
-}
-function tutorialMusic(notes) {
+
+function tutMusic(notes, beats) {
   const m = [];
-  for (let b = 0; b < 28; b++) {   // count-in + 24 beats: a soft pulse, low on each bar
-    m.push({ t: b * TUT_BEAT, pitch: b % 4 ? 60 : 48, vel: b < 4 ? 70 : 45, dur: 0.15, g: -1 });
+  for (let b = 0; b < beats; b++) m.push({ t: b * TUT_BEAT, pitch: b % 4 ? 60 : 48, vel: 40, dur: 0.15, g: -1 });
+  for (const n of notes) {
+    const bend = n.path?.[0];
+    m.push({ t: n.time, pitch: TUT_PITCH[n.lane], vel: 100, dur: (bend ? bend.time : n.end || n.time + 0.3) - n.time, g: n.time });
+    if (bend) m.push({ t: bend.time, pitch: TUT_PITCH[bend.lane], vel: 100, dur: n.end - bend.time, g: -1 });
   }
-  for (const n of notes) m.push({ t: n.time, pitch: TUT_LANE_PITCH[n.lane], vel: 100, dur: n.end ? n.end - n.time : 0.3, g: n.time });
   return m.sort((a, b) => a.t - b.t);
 }
-async function startTutorial(phase = 'demo') {
-  unlockAudio();
-  tut = { phase };
-  // the try counts as a play in the play log (song "tutorial"); the demo does not
-  playing = phase === 'try'
-    ? { song: { id: 'tutorial', title: 'Tutorial', builtin: true, kind: 'midi' }, difficulty: 'easy', playId: newId(), startedAt: Date.now(), bpm: 120, logged: false }
-    : null;
-  game.char.enabled = settings.character !== false;
-  game.char.cutinEnabled = false;
-  await game.char.prepare('tutorial', null, 1500);
-  await audio.resume();
-  const notes = tutorialChart();
+// count-in: 4 beats before the player's go, half a beat for the looping preview
+function tutStart(g, stepIdx, auto) {
+  const at = b => (b + (auto ? 0.5 : 4)) * TUT_BEAT;
+  const notes = TUT_STEPS[stepIdx].chart(at).sort((a, b) => a.time - b.time || a.lane - b.lane);
   const times = new Set(notes.map(n => n.time));
-  $('tutBanner').textContent = phase === 'demo' ? `▶ ${t('tut.demo')}` : t('tut.try');
-  show('play');
-  game.resize();
-  game.start({
+  const beats = Math.ceil(Math.max(...notes.map(n => n.end || n.time)) / TUT_BEAT) + 2;
+  g.start({
     notes, speed: null, title: 'TUTORIAL', songId: null, difficulty: 'easy',
-    music: { type: 'midi', notes: tutorialMusic(notes), isGameNote: n => times.has(n.g) },
-    beats: Array.from({ length: 28 }, (_, i) => i * TUT_BEAT), downbeat: 0, barBeats: 4,
-    settings: { ...settings, noFail: true }, auto: phase === 'demo',
+    music: { type: 'midi', notes: tutMusic(notes, beats), isGameNote: n => times.has(n.g) },
+    beats: Array.from({ length: beats }, (_, i) => i * TUT_BEAT), downbeat: 0, barBeats: 4,
+    settings: { ...settings, noFail: true, cutin: false, character: auto ? false : settings.character }, auto,
   });
 }
+function demoGame() {
+  if (!demo) {
+    demo = new Game($('tutCanvas'), audio, {
+      onEnd: () => setTimeout(() => { if (tut?.phase === 'card' && screen === 'tutorial') tutStart(demo, tut.step, true); }, 700),
+    });
+    demo.mini = true;
+    new ResizeObserver(() => demo.resize()).observe($('tutCanvas'));
+  }
+  return demo;
+}
+// the keys under the preview light up while the demo presses / holds them
+function tutPads() {
+  if (tut?.phase !== 'card' || !demo) return;
+  [...$('tutPads').children].forEach((el, l) => el.classList.toggle('on', demo.state === 'playing' && (demo.beam[l] > 0.7 || !!demo.holding[l])));
+  requestAnimationFrame(tutPads);
+}
+function stopDemo() { if (demo && demo.state !== 'idle') demo.stop(); }
+
 function tutButtons(list) {
   const box = $('tutBtns');
   box.innerHTML = '';
@@ -582,48 +593,78 @@ function tutButtons(list) {
     box.appendChild(b);
   });
 }
-function tutScreen(title, sub, keys, buttons) {
-  $('tutTitle').innerHTML = title;
-  $('tutSub').innerHTML = sub;
-  $('tutKeys').classList.toggle('hidden', !keys);
-  tutButtons(buttons);
-  show('tutorial');
-}
-const tutLeave = to => () => { tut = null; game.stop(); show(to); if (to === 'select') renderSongList(); };
-function tutorialEnd(r) {
-  if (tut.phase === 'demo') {
-    // the player's turn: their keys (or a tap hint on touch screens), then go
-    tutScreen(t('tut.try'), isTouch() ? t('tut.touch') : t('tut.trySub'), !isTouch(),
-      [[t('tut.start'), () => startTutorial('try'), true], [t('tut.back'), tutLeave('title')]]);
-    return;
+async function tutCard(i) {
+  unlockAudio();
+  const id = TUT_STEPS[i].id;
+  tut = { ...(tut || { offs: [], counts: { perfect: 0, great: 0, good: 0, miss: 0 } }), step: i, phase: 'card' };
+  $('tutStepNo').textContent = `${i + 1} / ${TUT_STEPS.length}`;
+  $('tutTitle').textContent = t(`tut.${id}`);
+  $('tutSub').textContent = t(`tut.${id}.${isTouch() ? 'touch' : 'key'}`);
+  $('tutScreen').classList.remove('done');
+  $('tutPads').innerHTML = '';
+  for (let l = 0; l < 4; l++) {
+    const d = document.createElement('div');
+    d.className = 'key';
+    d.textContent = isTouch() ? '' : settings.keyLabels[l];
+    d.style.color = LANE_COLORS[l];
+    d.style.borderColor = LANE_COLORS[l] + '88';
+    $('tutPads').appendChild(d);
   }
+  tutButtons([[t('tut.try'), () => tutTry(i), true]]);
+  show('tutorial');
+  await audio.resume();
+  tutStart(demoGame(), i, true);
+  requestAnimationFrame(tutPads);
+}
+async function tutTry(i) {
+  stopDemo();
+  tut.phase = 'try';
+  playing = { song: { id: `tutorial-${TUT_STEPS[i].id}`, title: 'Tutorial', builtin: true, kind: 'midi' }, difficulty: 'easy', playId: newId(), startedAt: Date.now(), bpm: 100, logged: false };
+  game.char.enabled = settings.character !== false;
+  game.char.cutinEnabled = false;
+  await game.char.prepare('tutorial', null, 1500);
+  await audio.resume();
+  $('tutBanner').textContent = `${t(`tut.${TUT_STEPS[i].id}`)}  ${i + 1} / ${TUT_STEPS.length}`;
+  show('play');
+  game.resize();
+  tutStart(game, i, false);
+}
+function tutorialEnd(r) {
   logPlay(r.failed ? 'failed' : 'clear', r);
+  // timing: taps and hold heads (sweep steps are judged loosely, slide bends only count lateness)
+  for (const n of game.notes) if (n.sweep == null && n.off != null) tut.offs.push(n.off);
+  for (const k in tut.counts) tut.counts[k] += r.counts[k];
+  if (tut.step + 1 < TUT_STEPS.length) return tutCard(tut.step + 1);
+  tutDone();
+}
+function tutDone() {
+  tut.phase = 'done';
   localStorage.setItem('rhythmTutDone', '1');
   $('btnTutorial').classList.remove('new');
-  const again = [t('tut.again'), () => startTutorial('try')];
+  $('tutScreen').classList.add('done');
+  $('tutStepNo').textContent = '';
+  $('tutTitle').textContent = t('tut.done');
+  const c = tut.counts;
+  $('tutSub').innerHTML = ['perfect', 'great', 'good', 'miss'].filter(k => c[k] || k !== 'good').map(k => `<b>${c[k]}</b> ${k.toUpperCase()}`).join(' · ');
   const play = [t('tut.play'), tutLeave('select')];
-  // trimmed median of the hit offsets (already relative to the current offset setting)
-  const offs = [...r.offsets].sort((a, b) => a - b);
-  const counts = ['perfect', 'great', 'good', 'miss'].filter(k => r.counts[k] || k !== 'good')
-    .map(k => `<b>${r.counts[k]}</b> ${k.toUpperCase()}`).join(' · ');
-  if (offs.length < 8) return tutScreen(t('tut.few'), counts, false, [[t('tut.again'), () => startTutorial('try'), true], play]);
+  const again = [t('tut.again'), () => { tut = null; tutCard(0); }];
+  // trimmed median of the hit offsets (relative to the current offset setting)
+  const offs = [...tut.offs].sort((a, b) => a - b);
   const trimmed = offs.slice(Math.floor(offs.length * 0.15), Math.ceil(offs.length * 0.85));
-  const m = Math.round(trimmed[trimmed.length >> 1]);
-  if (Math.abs(m) < 10) {
-    return tutScreen(`${t('tut.good')} ✓<small>${m > 0 ? '+' : ''}${m} ms</small>`, counts, false, [[t('tut.play'), tutLeave('select'), true], again]);
-  }
-  const to = settings.offset + m;
-  const fmt = v => `${v > 0 ? '+' : ''}${v}`;
-  tutScreen(`${t(m > 0 ? 'tut.late' : 'tut.early')} ${Math.abs(m)} ms`, counts, false, [
-    [`Offset ${fmt(settings.offset)} → ${fmt(to)}`, b => {
-      settings.offset = to; saveSettings();
+  const m = trimmed.length ? Math.round(trimmed[trimmed.length >> 1]) : 0;
+  if (offs.length >= 10 && Math.abs(m) >= 10) {
+    tutButtons([[t('tut.calibrate'), b => {
+      const from = settings.offset;
+      settings.offset += m; saveSettings();
       b.disabled = true; b.textContent = '✓';
-      $('tutSub').textContent = t('tut.applied');
-    }, true],
-    again, play,
-  ]);
+      $('tutSub').textContent = `Offset ${from > 0 ? '+' : ''}${from} → ${settings.offset > 0 ? '+' : ''}${settings.offset} ms`;
+    }, true], play, again]);
+  } else tutButtons([[...play, true], again]);
+  show('tutorial');
 }
-$('btnTutorial').addEventListener('click', () => startTutorial('demo'));
+const tutLeave = to => () => { stopDemo(); game.stop(); tut = null; show(to); if (to === 'select') renderSongList(); };
+$('btnTutorial').addEventListener('click', () => { tut = null; tutCard(0); });
+$('btnTutBack').addEventListener('click', () => tutLeave('title')());
 if (!localStorage.getItem('rhythmTutDone')) $('btnTutorial').classList.add('new');
 
 // ---------- play log ----------
@@ -958,7 +999,7 @@ syncLangUI();
 $('btnSettingsBack').addEventListener('click', () => show(settingsReturn === 'settings' || settingsReturn === 'calibrate' ? 'title' : settingsReturn));
 
 function renderKeys() {
-  for (const id of ['titleKeys', 'settingsKeys', 'tutKeys']) {
+  for (const id of ['titleKeys', 'settingsKeys']) {
     const box = $(id);
     box.innerHTML = '';
     settings.keyLabels.forEach((k, i) => {

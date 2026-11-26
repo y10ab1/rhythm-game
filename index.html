@@ -112,12 +112,20 @@
     <button class="btn hidden" id="btnCalApply" data-i18n="cal.apply">Apply</button>
   </section>
 
-  <!-- Tutorial: between the demo and the player's go, and the timing result after it -->
+  <!-- Tutorial: one kind of note per step (preview window + one line), then the player's go -->
   <section id="tutorialScreen" class="screen">
     <div class="scene-bg"></div>
-    <div class="tut-title" id="tutTitle"></div>
-    <div class="tut-sub" id="tutSub"></div>
-    <div class="keys tut-keys" id="tutKeys"></div>
+    <header class="topbar">
+      <button class="icon-btn" id="btnTutBack" aria-label="Back">‹</button>
+      <div class="topbar-title">TUTORIAL</div>
+      <span class="tut-step-no" id="tutStepNo"></span>
+    </header>
+    <div class="tut-card" id="tutScreen">
+      <div class="tut-title" id="tutTitle"></div>
+      <div class="tut-demo"><canvas id="tutCanvas"></canvas></div>
+      <div class="keys tut-pads" id="tutPads"></div>
+      <div class="tut-sub" id="tutSub"></div>
+    </div>
     <div class="btn-row tut-btns" id="tutBtns"></div>
   </section>
   <div id="tutBanner" class="hidden"></div>

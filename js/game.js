@@ -152,7 +152,7 @@ export class Game {
     // wide screens: a perspective highway styled as a shamisen neck, centred, with arc gauges both sides.
     // fieldX/fieldW/laneW describe the judge line (scale 1); the neck narrows toward the horizon.
     // every screen draws the shamisen neck (persp); only wide ones get the side arc gauges (arcs).
-    this.arcs = this.W >= 760 && this.W / this.H >= 1.15;
+    this.arcs = !this.mini && this.W >= 760 && this.W / this.H >= 1.15;
     this.persp = true;
     let fieldW;
     if (this.arcs) {
@@ -167,6 +167,11 @@ export class Game {
       this.judgeY = this.H - Math.max(110, this.H * 0.15);
       this.horizonY = Math.max(64, this.H * 0.08);
       this.farRatio = 0.52;
+    }
+    if (this.mini) {   // tutorial preview window: no HUD, so the neck can use the whole height
+      fieldW = Math.min(this.W - 16, this.H * 0.9);
+      this.judgeY = this.H * 0.82;
+      this.horizonY = this.H * 0.04;
     }
     this.laneW = fieldW / 4;
     this.fieldX = (this.W - fieldW) / 2;
@@ -971,7 +976,7 @@ export class Game {
     this.drawSakura(g, now);
 
     this.char.drawMid(g, this, now, pulse);
-    this.drawHUD(t, now, dt);
+    if (!this.mini) this.drawHUD(t, now, dt);
     this.char.drawFront(g, this, now);
     this.dbg?.draw(g, this, t, now);
   }
