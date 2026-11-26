@@ -530,11 +530,13 @@ window.addEventListener('pagehide', () => { if (game.state === 'playing' || game
 // how to play it; then the player plays the same short chart. At the end, the median hit offset of all the
 // steps becomes a one-tap offset fix (校準打擊) when it is clearly off.
 const TUT_BEAT = 0.6;   // 100 BPM
+// each step is two 8-counts (16 beats): 4 beats of count-in, notes up to beat 13, done by beat 16
+const TUT_BEATS = 16;
 const TUT_STEPS = [
-  { id: 'tap', chart: at => [0, 1, 2, 3, 3, 2, 1, 0].map((l, i) => ({ time: at(i), lane: l })) },
-  { id: 'hold', chart: at => [[1, 0, 2], [2, 3, 5], [0, 6, 8], [3, 9, 11]].map(([l, a, b]) => ({ time: at(a), lane: l, end: at(b) })) },
+  { id: 'tap', chart: at => [0, 1, 2, 3, 3, 2, 1, 0, 1, 2].map((l, i) => ({ time: at(i), lane: l })) },
+  { id: 'hold', chart: at => [[1, 0, 2], [2, 3, 5], [0, 6, 7], [3, 8, 9]].map(([l, a, b]) => ({ time: at(a), lane: l, end: at(b) })) },
   { id: 'sweep', chart: at => [[0, 1, 2, 3], [3, 2, 1, 0], [0, 1, 2, 3]].flatMap((ls, k) => ls.map((l, i) => ({ time: at(k * 3 + i / 2), lane: l, sweep: k }))) },
-  { id: 'slide', chart: at => [[1, 0, 2, 2, 4], [2, 5, 7, 1, 9], [0, 10, 12, 1, 14]].map(([l, a, bend, to, b]) => ({ time: at(a), lane: l, end: at(b), path: [{ time: at(bend), lane: to }] })) },
+  { id: 'slide', chart: at => [[1, 0, 2, 2, 4], [2, 5, 7, 1, 9]].map(([l, a, bend, to, b]) => ({ time: at(a), lane: l, end: at(b), path: [{ time: at(bend), lane: to }] })) },
 ];
 let tut = null;    // { step, phase: 'card' | 'try' | 'done', offs: [hit offsets], counts }
 let demo = null;   // the preview Game
@@ -549,15 +551,13 @@ function tutDrums(beats) {
   }
   return h;
 }
-// count-in: 4 beats before the player's go, half a beat for the looping preview
 function tutStart(g, stepIdx, auto) {
-  const at = b => (b + (auto ? 0.5 : 4)) * TUT_BEAT;
+  const at = b => (b + 4) * TUT_BEAT;
   const notes = TUT_STEPS[stepIdx].chart(at).sort((a, b) => a.time - b.time || a.lane - b.lane);
-  const beats = Math.ceil(Math.max(...notes.map(n => n.end || n.time)) / TUT_BEAT) + 2;
   g.start({
     notes, speed: null, title: 'TUTORIAL', songId: null, difficulty: 'easy',
-    music: { type: 'drums', hits: tutDrums(beats) },
-    beats: Array.from({ length: beats }, (_, i) => i * TUT_BEAT), downbeat: 0, barBeats: 4,
+    music: { type: 'drums', hits: tutDrums(TUT_BEATS) },
+    beats: Array.from({ length: TUT_BEATS }, (_, i) => i * TUT_BEAT), downbeat: 0, barBeats: 4,
     settings: { ...settings, noFail: true, cutin: false, character: auto ? false : settings.character }, auto,
   });
 }
