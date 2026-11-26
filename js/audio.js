@@ -186,6 +186,62 @@ export class AudioEngine {
     this.musicSource = { gain: g, midi: true };
   }
 
+  // Synth drum kit for the tutorial: hits = [{ t (s, song time), kind: 'kick' | 'snare' | 'hat' }],
+  // scheduled ahead on the audio clock like playMidi.
+  playDrums(hits, t0) {
+    this.stopMusic();
+    const ctx = this.ctx;
+    const g = ctx.createGain();
+    g.gain.value = 0.9;
+    g.connect(this.musicBus);
+    if (!this.noiseBuf) {
+      this.noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+      const d = this.noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const env = (at, peak, decay) => {
+      const e = ctx.createGain();
+      e.gain.setValueAtTime(peak, at);
+      e.gain.exponentialRampToValueAtTime(0.0001, at + decay);
+      e.connect(g);
+      return e;
+    };
+    const noise = (at, dur, type, freq, out) => {
+      const n = ctx.createBufferSource(); n.buffer = this.noiseBuf;
+      const f = ctx.createBiquadFilter(); f.type = type; f.frequency.value = freq;
+      n.connect(f); f.connect(out);
+      n.start(at, Math.random() * 0.5); n.stop(at + dur);
+    };
+    const voice = (h, at) => {
+      if (h.kind === 'kick') {
+        const o = ctx.createOscillator(); o.type = 'sine';
+        o.frequency.setValueAtTime(150, at);
+        o.frequency.exponentialRampToValueAtTime(45, at + 0.12);
+        o.connect(env(at, 1.0, 0.32));
+        o.start(at); o.stop(at + 0.35);
+      } else if (h.kind === 'snare') {
+        noise(at, 0.2, 'highpass', 1400, env(at, 0.5, 0.18));
+        const o = ctx.createOscillator(); o.type = 'triangle'; o.frequency.value = 190;
+        o.connect(env(at, 0.35, 0.09));
+        o.start(at); o.stop(at + 0.12);
+      } else {
+        noise(at, 0.06, 'highpass', 7500, env(at, h.accent ? 0.22 : 0.13, 0.045));
+      }
+    };
+    let idx = 0;
+    const pump = () => {
+      const horizon = ctx.currentTime + 0.25;
+      while (idx < hits.length && t0 + hits[idx].t < horizon) {
+        const h = hits[idx++];
+        if (t0 + h.t >= ctx.currentTime - 0.02) voice(h, Math.max(ctx.currentTime, t0 + h.t));
+      }
+      if (idx >= hits.length) clearInterval(this.midiTimer);
+    };
+    pump();
+    this.midiTimer = setInterval(pump, 30);
+    this.musicSource = { gain: g, midi: true };
+  }
+
   stopMusic(fade = 0) {
     clearInterval(this.midiTimer);
     this.midiTimer = null;

@@ -530,7 +530,6 @@ window.addEventListener('pagehide', () => { if (game.state === 'playing' || game
 // how to play it; then the player plays the same short chart. At the end, the median hit offset of all the
 // steps becomes a one-tap offset fix (校準打擊) when it is clearly off.
 const TUT_BEAT = 0.6;   // 100 BPM
-const TUT_PITCH = [72, 76, 79, 84];
 const TUT_STEPS = [
   { id: 'tap', chart: at => [0, 1, 2, 3, 3, 2, 1, 0].map((l, i) => ({ time: at(i), lane: l })) },
   { id: 'hold', chart: at => [[1, 0, 2], [2, 3, 5], [0, 6, 8], [3, 9, 11]].map(([l, a, b]) => ({ time: at(a), lane: l, end: at(b) })) },
@@ -541,25 +540,23 @@ let tut = null;    // { step, phase: 'card' | 'try' | 'done', offs: [hit offsets
 let demo = null;   // the preview Game
 const isTouch = () => matchMedia('(pointer: coarse)').matches;
 
-function tutMusic(notes, beats) {
-  const m = [];
-  for (let b = 0; b < beats; b++) m.push({ t: b * TUT_BEAT, pitch: b % 4 ? 60 : 48, vel: 40, dur: 0.15, g: -1 });
-  for (const n of notes) {
-    const bend = n.path?.[0];
-    m.push({ t: n.time, pitch: TUT_PITCH[n.lane], vel: 100, dur: (bend ? bend.time : n.end || n.time + 0.3) - n.time, g: n.time });
-    if (bend) m.push({ t: bend.time, pitch: TUT_PITCH[bend.lane], vel: 100, dur: n.end - bend.time, g: -1 });
+// backing: a plain drum groove (kick on 1 and 3, snare on 2 and 4, 8th-note hi-hats)
+function tutDrums(beats) {
+  const h = [];
+  for (let b = 0; b < beats; b++) {
+    const t = b * TUT_BEAT;
+    h.push({ t, kind: b % 2 ? 'snare' : 'kick' }, { t, kind: 'hat', accent: true }, { t: t + TUT_BEAT / 2, kind: 'hat' });
   }
-  return m.sort((a, b) => a.t - b.t);
+  return h;
 }
 // count-in: 4 beats before the player's go, half a beat for the looping preview
 function tutStart(g, stepIdx, auto) {
   const at = b => (b + (auto ? 0.5 : 4)) * TUT_BEAT;
   const notes = TUT_STEPS[stepIdx].chart(at).sort((a, b) => a.time - b.time || a.lane - b.lane);
-  const times = new Set(notes.map(n => n.time));
   const beats = Math.ceil(Math.max(...notes.map(n => n.end || n.time)) / TUT_BEAT) + 2;
   g.start({
     notes, speed: null, title: 'TUTORIAL', songId: null, difficulty: 'easy',
-    music: { type: 'midi', notes: tutMusic(notes, beats), isGameNote: n => times.has(n.g) },
+    music: { type: 'drums', hits: tutDrums(beats) },
     beats: Array.from({ length: beats }, (_, i) => i * TUT_BEAT), downbeat: 0, barBeats: 4,
     settings: { ...settings, noFail: true, cutin: false, character: auto ? false : settings.character }, auto,
   });

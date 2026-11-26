@@ -416,6 +416,7 @@ export class Game {
     this.chorus = music.type === 'audio' ? findChorus(music.buffer, this.beats, this.downbeat, this.barBeats) : [];
     this.fx = { mv: 0, chorus: 0, sakura: 0, cam: 0, chorusAt: -1e9, chorusN: 0, inChorus: false };
     if (music.type === 'audio') this.audio.playBuffer(music.buffer, this.t0);
+    else if (music.type === 'drums') this.audio.playDrums(music.hits, this.t0);
     else this.audio.playMidi(music.notes, this.t0, music.isGameNote);
 
     this.dbg?.begin(this, { title, songId, difficulty });
@@ -747,7 +748,7 @@ export class Game {
       for (let i = this.laneHead[l]; i < list.length; i++) {
         const n = list[i];
         if (n.t > t) break;
-        if (n.state === 0) { this.beam[l] = 1; this.hit(n, 0); }
+        if (n.state === 0) { this.beam[l] = 1; this.hit(n, 0); if (this.auto && this.settings.hitsound > 0) this.audio.playTap(); }
       }
     }
     for (const n of [...this.holding]) {
