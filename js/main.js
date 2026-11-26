@@ -552,19 +552,21 @@ function tutDrums(beats) {
   return h;
 }
 function tutStart(g, stepIdx, auto) {
-  const at = b => (b + 4) * TUT_BEAT;
+  // the preview skips the count-in: its first note is already a third of the way down when it starts
+  const at = b => (b + (auto ? 0 : 4)) * TUT_BEAT;
   const notes = TUT_STEPS[stepIdx].chart(at).sort((a, b) => a.time - b.time || a.lane - b.lane);
   g.start({
     notes, speed: null, title: 'TUTORIAL', songId: null, difficulty: 'easy',
     music: { type: 'drums', hits: tutDrums(TUT_BEATS) },
     beats: Array.from({ length: TUT_BEATS }, (_, i) => i * TUT_BEAT), downbeat: 0, barBeats: 4,
     settings: { ...settings, noFail: true, cutin: false, character: auto ? false : settings.character }, auto,
+    lead: auto ? (approach, first) => approach * 0.65 - first : null,
   });
 }
 function demoGame() {
   if (!demo) {
     demo = new Game($('tutCanvas'), audio, {
-      onEnd: () => setTimeout(() => { if (tut?.phase === 'card' && screen === 'tutorial') tutStart(demo, tut.step, true); }, 700),
+      onEnd: () => setTimeout(() => { if (tut?.phase === 'card' && screen === 'tutorial') tutStart(demo, tut.step, true); }, 250),
     });
     demo.mini = true;
     new ResizeObserver(() => demo.resize()).observe($('tutCanvas'));

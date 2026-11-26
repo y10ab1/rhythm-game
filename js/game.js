@@ -347,7 +347,7 @@ export class Game {
   }
 
   // ---------- lifecycle ----------
-  start({ notes, speed, beats, downbeat, barBeats, music, title, songId, difficulty, settings, auto = false }) {
+  start({ notes, speed, beats, downbeat, barBeats, music, title, songId, difficulty, settings, auto = false, lead = null }) {
     this.settings = settings;
     this.auto = auto;   // tutorial demo: plays itself, input ignored
     this.title = title;
@@ -404,11 +404,12 @@ export class Game {
 
     const first = this.notes.length ? this.notes[0].t : 0;
     const last = this.notes.reduce((m, n) => Math.max(m, n.end || n.t), 0);
-    this.endMs = Math.max(last + 1800, 3000);
+    this.endMs = auto ? last + 900 : Math.max(last + 1800, 3000);   // the preview loops sooner
     this.lastNoteMs = last || Infinity;
     this.startPerf = performance.now();
     this.lastMilestone = 0;
-    const leadMs = Math.max(2200, this.approach / this.minSpeed + 900 - first);
+    // lead: a caller's own lead-in (the tutorial preview starts with the first note already on screen)
+    const leadMs = lead != null ? Math.max(0, lead(this.approach / this.minSpeed, first)) : Math.max(2200, this.approach / this.minSpeed + 900 - first);
 
     const ctx = this.audio.ensure();
     this.t0 = ctx.currentTime + 0.12 + leadMs / 1000;
